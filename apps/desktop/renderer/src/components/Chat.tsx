@@ -170,11 +170,12 @@ export function Chat({
 
   function startResize(event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
-    setResponseHeight((current) => clamp(current, RESPONSE_HEIGHT_MIN, getMaxResponseHeight()));
+    const startHeight = clamp(responseHeight, RESPONSE_HEIGHT_MIN, getMaxResponseHeight());
+    setResponseHeight(startHeight);
     resizeDragRef.current = {
       pointerId: event.pointerId,
       startY: event.clientY,
-      startHeight: responseHeight,
+      startHeight,
       moved: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);

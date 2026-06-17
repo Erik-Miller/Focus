@@ -851,6 +851,8 @@ body {
 .lb-play-mark svg {
   width: 19px;
   height: 19px;
+  fill: currentColor;
+  stroke: none;
   transform: translateX(1.25px);
 }
 .lb-start:hover:not(:disabled) {

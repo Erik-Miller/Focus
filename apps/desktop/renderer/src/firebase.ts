@@ -10,7 +10,6 @@ const firebaseConfig = {
   projectId: "focus-9bf4b",
   storageBucket: "focus-9bf4b.firebasestorage.app",
   messagingSenderId: "141136258602",
-  appId: "1:141136258602:web:7db488e2ec0b434c8b8553",
 };
 
 export const app = initializeApp(firebaseConfig);
