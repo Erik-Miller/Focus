@@ -3,6 +3,7 @@ import { ChevronRight, MoreHorizontal, Trash2 } from "lucide-react";
 import type { Session } from "@focus/shared";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Props {
   sessions: Session[];
@@ -16,20 +17,22 @@ export function SessionList({ sessions, activeId, onSelect, onDelete, overlay = 
   const [open, setOpen] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<Session | null>(null);
   if (sessions.length === 0) return null;
 
-  const deleteSession = async (session: Session) => {
+  const askToDeleteSession = (session: Session) => {
     if (!onDelete || deletingId) return;
-    const sessionLabel = label(session);
-    const confirmed = window.confirm(`Delete "${sessionLabel}"? This cannot be undone.`);
-    if (!confirmed) {
-      setMenuOpenId(null);
-      return;
-    }
+    setMenuOpenId(null);
+    setDeleteCandidate(session);
+  };
 
+  const deleteSession = async () => {
+    const session = deleteCandidate;
+    if (!session || !onDelete || deletingId) return;
     setDeletingId(session.id);
     try {
       await onDelete(session.id);
+      setDeleteCandidate(null);
       setMenuOpenId(null);
     } finally {
       setDeletingId(null);
@@ -94,7 +97,7 @@ export function SessionList({ sessions, activeId, onSelect, onDelete, overlay = 
                             className="sl-menu-item sl-menu-delete"
                             role="menuitem"
                             disabled={deletingId === s.id}
-                            onClick={() => void deleteSession(s)}
+                            onClick={() => askToDeleteSession(s)}
                           >
                             <Trash2 aria-hidden />
                             <span>{deletingId === s.id ? "Deleting..." : "Delete session"}</span>
@@ -109,6 +112,21 @@ export function SessionList({ sessions, activeId, onSelect, onDelete, overlay = 
           </ul>
         </CollapsibleContent>
       </Collapsible>
+      <ConfirmDialog
+        open={Boolean(deleteCandidate)}
+        title="Delete this session?"
+        description={
+          deleteCandidate
+            ? `"${label(deleteCandidate)}" will be permanently removed. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        busy={Boolean(deleteCandidate && deletingId === deleteCandidate.id)}
+        onCancel={() => {
+          if (!deletingId) setDeleteCandidate(null);
+        }}
+        onConfirm={() => void deleteSession()}
+      />
     </Card>
   );
 }
