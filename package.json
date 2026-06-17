@@ -5,6 +5,9 @@
   "description": "Focus — a Deep Agent that observes moments of attention and builds an understanding of your work.",
   "license": "MIT",
   "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "build": "pnpm run build:functions && pnpm run build:desktop",
     "build:desktop": "pnpm --filter @focus/shared run build && pnpm --filter @focus/desktop run build",
@@ -12,7 +15,6 @@
     "dev:desktop": "pnpm --filter @focus/desktop run dev",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
-    "seed:demo": "pnpm --filter @focus/functions run seed:demo",
     "deploy": "pnpm run build:functions && firebase deploy --only functions,firestore:rules,storage",
     "deploy:functions": "pnpm run build:functions && firebase deploy --only functions"
   },

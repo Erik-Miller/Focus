@@ -169,7 +169,7 @@ function buildTimelineEntries(
 }
 
 function shouldGroupBatch(observation: Observation): boolean {
-  return Boolean(observation.batchId && observation.batchId !== "demo");
+  return Boolean(observation.batchId);
 }
 
 function entryFromObservationGroup(id: string, observations: Observation[]): TimelineEntry {

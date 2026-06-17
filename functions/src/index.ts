@@ -11,7 +11,6 @@ export {
 export { processObservations } from "./callables/processObservations.js";
 export { chatWithAgent, cancelChatRun } from "./callables/chatWithAgent.js";
 export { generateReport } from "./callables/generateReport.js";
-export { seedDemoSession } from "./callables/seedDemoSession.js";
 export {
   saveWorkflowForLater,
   deleteSavedWorkflow,

@@ -7,7 +7,7 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm"],
-  target: "node22",
+  target: "node24",
   outDir: "lib",
   clean: true,
   splitting: false,

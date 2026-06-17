@@ -43,7 +43,6 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 | 250×250 cursor crop + periodic full frame    | Crop = precise focus point; full frame = occasional app/section context                  | Less context on most observations; full frames stay downscaled and cadence-limited      |
 | Dwell at 300ms + dHash novelty filter        | Responsive capture without flooding the agent                                            | Native (client‑side) hashing complexity; tuned thresholds                               |
 | All writes via Functions (Admin SDK)         | Tight, simple Firestore rules — clients only read what they own                          | Every mutation is a round‑trip through a callable                                       |
-| Demo Mode with pre‑seeded observations       | Reviewers can inspect seeded sessions without screen permissions                         | Demo screenshots are placeholders; live capture is the desktop app                      |
 
 ## How we'd extend it with more time
 
@@ -57,15 +56,16 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 ## Approximate time spent
 
 ~1 focused build day: planning + interface design, the agent/Functions layer (incl. validating the
-`deepagents` + Gemini 3.5 Flash integration), the React UI, the Electron capture path, demo mode, and
+`deepagents` + Gemini 3.5 Flash integration), the React UI, the Electron capture path, and
 deployment/docs.
 
 ## ~5 minute video outline
 
 1. **The idea (0:00–0:45)** — the theme flip: understanding your _own_ work from observation; dwell
    as the signal; understanding before automation.
-2. **Live demo (0:45–2:30)** — load the demo session; walk the Agent Awareness panel (hypothesis,
-   confidence, evidence, alternatives, workflows); scroll the timeline; show the live token usage.
+2. **Live walkthrough (0:45–2:30)** — start a short Focus session; walk the Agent Awareness panel
+   (hypothesis, confidence, evidence, alternatives, workflows); scroll the timeline; show the live
+   token usage.
 3. **Chat (2:30–3:30)** — ask "what workflows did you notice?" and "which should I automate later?";
    show grounded, specific answers; generate the report.
 4. **Under the hood (3:30–4:30)** — architecture diagram; Deep Agent + Gemini in Cloud Functions;

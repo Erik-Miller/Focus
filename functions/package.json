@@ -5,14 +5,13 @@
   "type": "module",
   "main": "lib/index.js",
   "engines": {
-    "node": "22"
+    "node": "24"
   },
   "scripts": {
     "build": "tsup",
     "build:watch": "tsup --watch",
     "serve": "pnpm run build && firebase emulators:start --only functions",
-    "validate": "node --import tsx scripts/validateAgent.ts",
-    "seed:demo": "node --import tsx scripts/seedDemo.ts"
+    "validate": "node --import tsx scripts/validateAgent.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.1.49",
@@ -23,7 +22,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^24.0.0",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

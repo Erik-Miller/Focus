@@ -58,10 +58,6 @@ export const callables = {
     functions,
     "generateReport",
   ),
-  seedDemoSession: httpsCallable<Record<string, never>, { sessionId: string }>(
-    functions,
-    "seedDemoSession",
-  ),
   saveWorkflowForLater: httpsCallable<
     {
       workflow: Workflow;
