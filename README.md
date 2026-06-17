@@ -12,6 +12,9 @@ type, edit files, or change anything on your computer. When it finds something w
 packages the workflow into a ready-made prompt you can save to your **Workflow Inbox** or hand off to
 Claude Desktop/CLI to build.
 
+Read more about the rationale for the work:
+[Focus rationale](https://docs.google.com/document/d/1_J81AX0jKFAsakXlRQGSFJ6o1jm_Qr869qVEz-GmeEs/edit?usp=sharing)
+
 ## How it works
 
 1. **It watches attention, not everything.** Focus waits for brief mouse pauses, then captures a
@@ -122,7 +125,22 @@ pnpm dev:desktop
 Grant **Screen Recording** and **Accessibility** to Electron in
 _System Settings → Privacy & Security_ the first time (the cursor‑region screenshots and the active
 window title need them). Then press **Start Focus**, work for a bit, and press **Stop Focus** to chat
-and generate a report.
+while the session report generates automatically.
+
+## Demo use case
+
+A simple way to try the whole loop is a short news-browsing session:
+
+1. Press **Start Focus**.
+2. Visit 3-5 news sites and browse normally for a few minutes: scan headlines, open articles,
+   compare coverage, search, and switch between tabs.
+3. Press **Stop Focus** and wait for the session report to generate automatically.
+4. Review what Focus thinks you were doing, including any repeated workflows it noticed.
+5. If the report or Workflow Inbox includes an automation-ready workflow, click the Claude CLI
+   handoff to launch the prepared prompt immediately.
+
+This shows the intended shape of the product: Focus observes and explains the browsing workflow,
+then packages any repetitive follow-up work for a separate agent to build.
 
 ## Testing
 
