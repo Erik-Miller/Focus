@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "./lib",
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@focus/shared": ["../packages/shared/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*", "scripts/**/*", "tsup.config.ts"]
+}

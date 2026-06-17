@@ -1,0 +1,38 @@
+rules_version = "2";
+
+// Focus security model:
+// - Any authenticated user (anonymous is fine) may READ sessions + subdocuments.
+//   Session ids are unguessable random ids; this keeps the model simple and avoids
+//   identity-mismatch issues across anonymous sign-ins.
+// - ALL writes go through Cloud Functions (Admin SDK), which bypass these rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /{subcollection}/{docId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+
+      match /savedWorkflows/{savedWorkflowId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow write: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

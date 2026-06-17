@@ -1,0 +1,28 @@
+{
+  "name": "focus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Focus — a Deep Agent that observes moments of attention and builds an understanding of your work.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "build": "pnpm run build:functions && pnpm run build:web",
+    "build:web": "pnpm --filter @focus/shared run build && pnpm --filter @focus/web run build",
+    "build:functions": "pnpm --filter @focus/shared run build && pnpm --filter @focus/functions run build",
+    "dev:web": "pnpm --filter @focus/web run dev",
+    "dev:desktop": "pnpm --filter @focus/desktop run dev",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write .",
+    "seed:demo": "pnpm --filter @focus/functions run seed:demo",
+    "deploy": "pnpm run build:functions && firebase deploy --only functions,firestore:rules,storage",
+    "deploy:functions": "pnpm run build:functions && firebase deploy --only functions"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@focus/functions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "serve": "pnpm run build && firebase emulators:start --only functions",
+    "validate": "node --import tsx scripts/validateAgent.ts",
+    "seed:demo": "node --import tsx scripts/seedDemo.ts"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.1.49",
+    "@langchain/google-genai": "^2.1.31",
+    "deepagents": "^1.10.2",
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,37 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+lib/
+out/
+build/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.*
+!.env.example
+functions/.env.local
+functions/.env.*.local
+*.key
+*.pem
+service-account*.json
+
+# firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+
+# electron
+apps/desktop/release/
+dist-electron/
+
+# misc
+.DS_Store
+*.log
+.vite/
+coverage/

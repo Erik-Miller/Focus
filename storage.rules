@@ -1,0 +1,15 @@
+rules_version = "2";
+
+// Screenshots are written exclusively by Cloud Functions (Admin SDK bypasses rules).
+// Any signed-in client may read screenshot objects (paths are random session ids).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /screenshots/{sessionId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
