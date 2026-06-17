@@ -1,9 +1,7 @@
-import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import { ChevronDown } from "lucide-react";
 import { directAddressReport, type Observation, type Report } from "@focus/shared";
 import { Card } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AccordionSection } from "./AccordionSection";
 import { WorkflowCard } from "./WorkflowCard";
 
 export function ReportView({
@@ -53,7 +51,11 @@ export function ReportView({
             <h3 className="report-section-heading">Focus areas</h3>
             <div className="report-focus-pill-row">
               {focusAreaTags.map((focusArea, i) => (
-                <span className="report-focus-pill" key={`${focusArea.raw}-${i}`} title={focusArea.raw}>
+                <span
+                  className="report-focus-pill"
+                  key={`${focusArea.raw}-${i}`}
+                  title={focusArea.raw}
+                >
                   {focusArea.label}
                 </span>
               ))}
@@ -68,44 +70,32 @@ export function ReportView({
         </div>
 
         {timelineMarkdown && (
-          <ReportAccordionSection title="Timeline">
+          <AccordionSection title="Timeline" variant="report">
             <div className="md-block">
               <ReactMarkdown>{timelineMarkdown}</ReactMarkdown>
             </div>
-          </ReportAccordionSection>
+          </AccordionSection>
         )}
 
         {viewReport.interpretations && (
-          <ReportAccordionSection title="Interpretation">
+          <AccordionSection title="Interpretation" variant="report">
             <div className="md-block">
               <ReactMarkdown>{viewReport.interpretations}</ReactMarkdown>
             </div>
-          </ReportAccordionSection>
+          </AccordionSection>
         )}
 
         {viewReport.nextSteps?.length > 0 && (
-          <ReportAccordionSection title="Suggested next steps">
+          <AccordionSection title="Suggested next steps" variant="report">
             <ul className="report-next-steps">
               {viewReport.nextSteps.map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
             </ul>
-          </ReportAccordionSection>
+          </AccordionSection>
         )}
       </div>
     </Card>
-  );
-}
-
-function ReportAccordionSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Collapsible className="report-accordion">
-      <CollapsibleTrigger className="report-accordion-trigger">
-        <span>{title}</span>
-        <ChevronDown className="report-accordion-chevron" aria-hidden />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="report-accordion-content">{children}</CollapsibleContent>
-    </Collapsible>
   );
 }
 

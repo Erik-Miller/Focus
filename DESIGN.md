@@ -43,7 +43,7 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 | 250×250 cursor crop + periodic full frame    | Crop = precise focus point; full frame = occasional app/section context                  | Less context on most observations; full frames stay downscaled and cadence-limited      |
 | Dwell at 300ms + dHash novelty filter        | Responsive capture without flooding the agent                                            | Native (client‑side) hashing complexity; tuned thresholds                               |
 | All writes via Functions (Admin SDK)         | Tight, simple Firestore rules — clients only read what they own                          | Every mutation is a round‑trip through a callable                                       |
-| Demo Mode with pre‑seeded observations       | Reviewers interact instantly in a browser with no screen permissions                     | Demo screenshots are placeholders; live capture is the desktop app                      |
+| Demo Mode with pre‑seeded observations       | Reviewers can inspect seeded sessions without screen permissions                         | Demo screenshots are placeholders; live capture is the desktop app                      |
 
 ## How we'd extend it with more time
 

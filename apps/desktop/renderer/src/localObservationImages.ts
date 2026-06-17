@@ -27,10 +27,7 @@ export function createClientObservationId(): string {
   return `obs_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export async function saveObservationImages(
-  sessionId: string,
-  dwell: DwellInput,
-): Promise<void> {
+export async function saveObservationImages(sessionId: string, dwell: DwellInput): Promise<void> {
   if (!dwell.clientObservationId) return;
   if (!dwell.cursorCropDataUrl && !dwell.fullScreenshotDataUrl) return;
 
@@ -94,10 +91,7 @@ function putRecord(db: IDBDatabase, record: StoredObservationImages): Promise<vo
   });
 }
 
-function getRecord(
-  db: IDBDatabase,
-  key: string,
-): Promise<StoredObservationImages | undefined> {
+function getRecord(db: IDBDatabase, key: string): Promise<StoredObservationImages | undefined> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readonly");
     const request = tx.objectStore(STORE_NAME).get(key);

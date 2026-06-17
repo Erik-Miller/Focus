@@ -34,10 +34,7 @@ export const callables = {
   startSession: httpsCallable<{ title?: string }, { sessionId: string }>(functions, "startSession"),
   stopSession: httpsCallable<{ sessionId: string }, { ok: boolean }>(functions, "stopSession"),
   resumeSession: httpsCallable<{ sessionId: string }, { ok: boolean }>(functions, "resumeSession"),
-  deleteSession: httpsCallable<{ sessionId: string }, { ok: boolean }>(
-    functions,
-    "deleteSession",
-  ),
+  deleteSession: httpsCallable<{ sessionId: string }, { ok: boolean }>(functions, "deleteSession"),
   processObservations: httpsCallable<
     { sessionId: string; observations: unknown[] },
     {

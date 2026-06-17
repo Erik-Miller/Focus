@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { directAddressText, type Observation, type Session } from "@focus/shared";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { AccordionSection } from "./AccordionSection";
 
 interface Props {
   session: Session;
@@ -49,7 +50,7 @@ export function AgentAwareness({ session, observations }: Props) {
             {hasDetails && (
               <div className="awareness-accordion-group">
                 {activity && (
-                  <AwarenessAccordionSection title="Current activity">
+                  <AccordionSection title="Current activity" variant="awareness">
                     <div
                       className={`agent-activity${session.updateInFlight ? " is-live" : ""}`}
                       aria-live="polite"
@@ -58,44 +59,46 @@ export function AgentAwareness({ session, observations }: Props) {
                         {activityText}
                       </span>
                     </div>
-                  </AwarenessAccordionSection>
+                  </AccordionSection>
                 )}
 
                 {hypothesis && (
-                  <AwarenessAccordionSection title="Current Intent">
+                  <AccordionSection title="Current Intent" variant="awareness">
                     <div className="md-block">
                       <ReactMarkdown>{currentIntentDetails}</ReactMarkdown>
                     </div>
-                  </AwarenessAccordionSection>
+                  </AccordionSection>
                 )}
 
                 {latest?.evidence?.length ? (
-                  <AwarenessAccordionSection title="Supporting evidence">
+                  <AccordionSection title="Supporting evidence" variant="awareness">
                     <ul>
                       {latest.evidence.map((e, i) => (
                         <li key={i}>{directAddressText(e)}</li>
                       ))}
                     </ul>
-                  </AwarenessAccordionSection>
+                  </AccordionSection>
                 ) : null}
 
                 {suggestedNextAction && (
-                  <AwarenessAccordionSection title="Anticipated next step">
+                  <AccordionSection title="Anticipated next step" variant="awareness">
                     <p>{suggestedNextAction}</p>
-                  </AwarenessAccordionSection>
+                  </AccordionSection>
                 )}
 
                 {latest?.alternatives?.length ? (
-                  <AwarenessAccordionSection title="Alternative hypotheses">
+                  <AccordionSection title="Alternative hypotheses" variant="awareness">
                     <ul>
                       {latest.alternatives.map((a, i) => (
                         <li key={i}>
                           <span>{directAddressText(a.hypothesis)}</span>
-                          <span className="hypothesis-confidence">{formatConfidence(a.confidence)}</span>
+                          <span className="hypothesis-confidence">
+                            {formatConfidence(a.confidence)}
+                          </span>
                         </li>
                       ))}
                     </ul>
-                  </AwarenessAccordionSection>
+                  </AccordionSection>
                 ) : null}
               </div>
             )}
@@ -103,18 +106,6 @@ export function AgentAwareness({ session, observations }: Props) {
         </CollapsibleContent>
       </Collapsible>
     </Card>
-  );
-}
-
-function AwarenessAccordionSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Collapsible className="awareness-accordion">
-      <CollapsibleTrigger className="awareness-accordion-trigger">
-        <span>{title}</span>
-        <ChevronDown className="awareness-accordion-chevron" aria-hidden />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="awareness-accordion-content">{children}</CollapsibleContent>
-    </Collapsible>
   );
 }
 

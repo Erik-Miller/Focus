@@ -33,13 +33,13 @@ Electron (macOS)                Firebase                         Gemini
 
 ## Repo layout
 
-| Path              | What                                                           |
-| ----------------- | -------------------------------------------------------------- |
-| `packages/shared` | Types, Zod schemas, monitoring config (shared by all packages) |
-| `functions`       | Cloud Functions + the Deep Agent (`functions/src/agent`)       |
-| `apps/web`        | React UI (Vite) used as the Electron renderer                  |
-| `apps/desktop`    | Electron shell (native capture) that loads the renderer        |
-| `demo`            | (bundled in `functions/src/demo`) sample dataset for Demo Mode |
+| Path                    | What                                                           |
+| ----------------------- | -------------------------------------------------------------- |
+| `packages/shared`       | Types, Zod schemas, monitoring config (shared by all packages) |
+| `functions`             | Cloud Functions + the Deep Agent (`functions/src/agent`)       |
+| `apps/desktop`          | Electron app, native capture, and the nested React renderer    |
+| `apps/desktop/renderer` | Vite renderer loaded by the Electron shell                     |
+| `demo`                  | (bundled in `functions/src/demo`) sample dataset for Demo Mode |
 
 ## Prerequisites
 
@@ -58,12 +58,6 @@ firebase functions:secrets:set LANGSMITH_API_KEY   # optional, enables tracing
 
 # Build everything
 pnpm build
-```
-
-## Run the renderer locally
-
-```bash
-pnpm dev:web        # http://localhost:5173
 ```
 
 ## Run the desktop capture app (macOS)

@@ -96,7 +96,9 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
       }
     } catch (err) {
       console.error("Failed to launch Claude automation", err);
-      setError(errorMessage(err, "Claude handoff failed. Check that Claude is installed and try again."));
+      setError(
+        errorMessage(err, "Claude handoff failed. Check that Claude is installed and try again."),
+      );
     } finally {
       setLaunching(null);
     }
@@ -128,13 +130,19 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
           <div className="automation-actions">
             <Button
               type="button"
-              className={saveConfirmed ? "automation-action-save is-saved" : "automation-action-save"}
+              className={
+                saveConfirmed ? "automation-action-save is-saved" : "automation-action-save"
+              }
               size="sm"
               variant="secondary"
               onClick={saveForLater}
               disabled={saving || launching !== null}
-              title={saveConfirmed ? "Saved to Workflow Inbox." : "Save this automation prompt for later"}
-              aria-label={saveConfirmed ? "Saved to Workflow Inbox." : "Save this automation prompt for later"}
+              title={
+                saveConfirmed ? "Saved to Workflow Inbox." : "Save this automation prompt for later"
+              }
+              aria-label={
+                saveConfirmed ? "Saved to Workflow Inbox." : "Save this automation prompt for later"
+              }
             >
               {saveConfirmed ? <Check /> : <Save />}
               {saveConfirmed ? "Saved" : saving ? "Saving" : "Save"}

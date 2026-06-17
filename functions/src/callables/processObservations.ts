@@ -265,10 +265,6 @@ function activityForObservations(observations: DwellInput[]): string {
   return `Captured ${count} new moments.`;
 }
 
-function preparationActivity(count: number): string {
-  return count === 1 ? "Preparing 1 observed moment." : `Preparing ${count} observed moments.`;
-}
-
 function reasoningActivity(count: number): string {
   return count === 1
     ? "Agent is analyzing 1 new moment."

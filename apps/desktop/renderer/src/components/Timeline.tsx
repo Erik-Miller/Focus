@@ -1,15 +1,8 @@
 import { useEffect, useState } from "react";
 import { directAddressText, type Observation, type UsageAggregate } from "@focus/shared";
 import { Card } from "@/components/ui/card";
-import {
-  loadObservationImages,
-  type LocalObservationImages,
-} from "../localObservationImages";
-import type {
-  LiveTimelineBatch,
-  LiveTimelineObservation,
-  LiveTimelineStatus,
-} from "../monitoring";
+import { loadObservationImages, type LocalObservationImages } from "../localObservationImages";
+import type { LiveTimelineBatch, LiveTimelineObservation, LiveTimelineStatus } from "../monitoring";
 import { UsageBar } from "./UsageBar";
 
 export function Timeline({
@@ -268,7 +261,9 @@ function pendingTextForEntry(entry: TimelineEntry): string {
       ? "1 screenshot captured. Waiting for analysis..."
       : `${entry.count} screenshots captured. Waiting for analysis...`;
   }
-  return entry.count === 1 ? "Analyzing 1 screenshot..." : `Analyzing ${entry.count} screenshots...`;
+  return entry.count === 1
+    ? "Analyzing 1 screenshot..."
+    : `Analyzing ${entry.count} screenshots...`;
 }
 
 function TimelineThumb({

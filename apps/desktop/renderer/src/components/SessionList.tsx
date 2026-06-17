@@ -50,10 +50,12 @@ export function SessionList({ sessions, activeId, onSelect, onDelete, overlay = 
           </span>
         </CollapsibleTrigger>
         <CollapsibleContent className="session-list-content">
-          <ul className="sl-list">
+          <ul className={`sl-list${menuOpenId ? " has-open-menu" : ""}`}>
             {sessions.map((s) => (
               <li key={s.id}>
-                <div className={`sl-row${s.id === activeId ? " is-current" : ""}`}>
+                <div
+                  className={`sl-row${s.id === activeId ? " is-current" : ""}${menuOpenId === s.id ? " has-open-menu" : ""}`}
+                >
                   <button
                     type="button"
                     className="sl-item"
@@ -81,9 +83,7 @@ export function SessionList({ sessions, activeId, onSelect, onDelete, overlay = 
                         aria-haspopup="menu"
                         aria-expanded={menuOpenId === s.id}
                         disabled={deletingId === s.id}
-                        onClick={() =>
-                          setMenuOpenId((current) => (current === s.id ? null : s.id))
-                        }
+                        onClick={() => setMenuOpenId((current) => (current === s.id ? null : s.id))}
                       >
                         <MoreHorizontal aria-hidden />
                       </button>

@@ -475,7 +475,7 @@ body {
   filter: blur(16px) saturate(1.2);
   opacity: 0.2;
 }
-/* The whole window is grabbable; interactive + scrollable regions opt out. */
+/* The whole window is grabbable; controls, text inputs, and scroll handles opt out. */
 .desktop .app {
   -webkit-app-region: drag;
   --desktop-content-gutter: 14px;
@@ -493,7 +493,7 @@ body {
   overflow: hidden;
 }
 .desktop .app-scroll {
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -508,7 +508,7 @@ body {
 }
 .desktop .app.app-report-mode .app-scroll,
 .desktop .app.app-inbox-mode .app-scroll {
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
   padding: 0;
   gap: 0;
 }
@@ -617,11 +617,35 @@ body {
 .desktop a,
 .desktop input,
 .desktop textarea,
+.desktop select,
+.desktop label,
 .desktop summary,
+.desktop [role="button"],
+.desktop [data-slot="button"],
 .desktop .timeline,
 .desktop .chat-scroll,
-.desktop .chat-resize-handle {
+.desktop .chat-resize-handle,
+.desktop ::-webkit-scrollbar,
+.desktop ::-webkit-scrollbar-thumb {
   -webkit-app-region: no-drag;
+}
+.desktop
+  :is(
+    .session-report-section,
+    .current-session-section,
+    .timeline-card,
+    .report-page-content,
+    .secondary-page-content,
+    .report-open-section,
+    .report-nav,
+    .report,
+    .report-body,
+    .report-empty,
+    .report-pending
+  ) {
+  -webkit-app-region: no-drag;
+  -webkit-user-select: text;
+  user-select: text;
 }
 /* Chat is docked to the bottom of the window: the content above scrolls, and
    padding follows the measured composer/response height. */
@@ -682,7 +706,7 @@ body {
   position: relative;
   z-index: 2;
   height: auto;
-  max-height: calc(100vh - 96px);
+  max-height: calc(100vh - 100px);
   background: transparent;
   border-radius: calc(var(--radius) - 2px);
 }
@@ -1431,12 +1455,19 @@ body {
   flex-direction: column;
   gap: 2px;
 }
+.sl-list.has-open-menu {
+  padding-bottom: 54px;
+}
 .desktop .session-list-overlay .sl-list {
   position: relative;
   z-index: 2;
   padding: 0;
 }
+.desktop .session-list-overlay .sl-list.has-open-menu {
+  padding-bottom: 54px;
+}
 .sl-row {
+  position: relative;
   width: 100%;
   display: flex;
   align-items: center;
@@ -1449,6 +1480,9 @@ body {
     background-color 75ms ease,
     color 75ms ease,
     opacity 75ms ease;
+}
+.sl-row.has-open-menu {
+  z-index: 4;
 }
 .sl-row:hover {
   background: var(--glass-bg);
@@ -1547,7 +1581,7 @@ body {
 }
 .sl-menu {
   position: absolute;
-  z-index: 10;
+  z-index: 20;
   top: calc(100% + 4px);
   right: 4px;
   min-width: 148px;
@@ -3004,7 +3038,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: min(72vh, calc(100vh - 96px));
+  max-height: calc(100vh - 100px);
 }
 .chat.is-compact {
   max-height: none;

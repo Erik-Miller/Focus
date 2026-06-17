@@ -164,10 +164,7 @@ export class MonitoringController {
     if (changed) this.emitLiveBatches();
   }
 
-  private async maybeFlush(
-    force: boolean,
-    requireInterpretation = false,
-  ): Promise<FlushResult> {
+  private async maybeFlush(force: boolean, requireInterpretation = false): Promise<FlushResult> {
     if (this.flushing) {
       if (requireInterpretation) this.requireCurrentFlushInterpretation = true;
       return force && this.flushPromise ? this.flushPromise : "skipped";

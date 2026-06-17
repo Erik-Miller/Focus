@@ -29,9 +29,7 @@ function cleanRunId(value: unknown): string {
   return runId;
 }
 
-async function isChatRunCanceled(
-  runRef: FirebaseFirestore.DocumentReference,
-): Promise<boolean> {
+async function isChatRunCanceled(runRef: FirebaseFirestore.DocumentReference): Promise<boolean> {
   const snap = await runRef.get();
   return snap.exists && snap.get("status") === "canceled";
 }

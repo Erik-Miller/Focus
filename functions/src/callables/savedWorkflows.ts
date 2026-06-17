@@ -22,10 +22,7 @@ export const saveWorkflowForLater = onCall(SAVED_WORKFLOW_OPTS, async (request) 
   return saveWorkflowForUser(uid, request.data);
 });
 
-export async function saveWorkflowForUser(
-  uid: string,
-  value: unknown,
-): Promise<{ id: string }> {
+export async function saveWorkflowForUser(uid: string, value: unknown): Promise<{ id: string }> {
   const parsed = saveWorkflowForLaterInputSchema.safeParse(value);
   if (!parsed.success) {
     throw new HttpsError("invalid-argument", "Valid saved workflow input required.");

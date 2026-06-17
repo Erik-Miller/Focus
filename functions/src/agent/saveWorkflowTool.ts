@@ -21,9 +21,7 @@ const SAVE_WORKFLOW_TOOL_SCHEMA = workflowSchema.describe(
   "An automatable workflow from this Focus session to save to the Workflow Inbox.",
 );
 
-export function createSaveWorkflowTool(
-  context: SaveWorkflowToolContext,
-): StructuredToolInterface {
+export function createSaveWorkflowTool(context: SaveWorkflowToolContext): StructuredToolInterface {
   const validObservationIds = new Set(context.validObservationIds);
 
   return tool(
@@ -91,13 +89,14 @@ export function hasExplicitSaveWorkflowIntent(message: string): boolean {
     return false;
   }
 
-  const saveVerb =
-    /\b(?:save|add|bookmark|stash|record|keep|store|put|send)\b/i.test(text);
+  const saveVerb = /\b(?:save|add|bookmark|stash|record|keep|store|put|send)\b/i.test(text);
   const saveTarget =
     /\b(?:workflow|automation|candidate|inbox|later|that|this|it|one|these)\b/i.test(text);
   return saveVerb && saveTarget;
 }
 
-function toolResult(result: { saved: true; id: string } | { saved: false; reason: string }): string {
+function toolResult(
+  result: { saved: true; id: string } | { saved: false; reason: string },
+): string {
   return JSON.stringify(result);
 }

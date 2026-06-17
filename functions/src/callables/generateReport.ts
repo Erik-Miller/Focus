@@ -53,9 +53,7 @@ export const generateReport = onCall(CALLABLE_OPTS, async (request) => {
       ? ref.collection("reports").doc(session.reportId)
       : ref.collection("reports").doc();
     const previousReportSnap = await reportRef.get();
-    const previousReport = previousReportSnap.exists
-      ? (previousReportSnap.data() as Report)
-      : null;
+    const previousReport = previousReportSnap.exists ? (previousReportSnap.data() as Report) : null;
     const now = Date.now();
     const significantScreenshots = (report.significantScreenshots ?? []).map((s) => {
       const obs = obsById.get(s.obsId);

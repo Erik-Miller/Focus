@@ -35,5 +35,3 @@ declare global {
 export function getBridge(): FocusBridge | null {
   return typeof window !== "undefined" && window.focus_bridge ? window.focus_bridge : null;
 }
-
-export const isDesktop = (): boolean => getBridge() !== null;

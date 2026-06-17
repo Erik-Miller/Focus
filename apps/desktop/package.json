@@ -4,9 +4,11 @@
   "private": true,
   "main": "dist-electron/main.cjs",
   "scripts": {
+    "build": "pnpm run build:renderer && pnpm run build:electron",
     "build:electron": "tsup",
-    "dev": "pnpm run build:electron && concurrently -k -n web,electron \"pnpm --filter @focus/web run dev\" \"wait-on tcp:5173 && cross-env FOCUS_DEV=1 electron .\"",
-    "start": "pnpm run build:electron && electron ."
+    "build:renderer": "pnpm --filter @focus/desktop-renderer run build",
+    "dev": "pnpm run build:electron && concurrently -k -n renderer,electron \"pnpm --filter @focus/desktop-renderer run dev\" \"wait-on tcp:5173 && cross-env FOCUS_DEV=1 electron .\"",
+    "start": "pnpm run build && electron ."
   },
   "dependencies": {
     "@focus/shared": "workspace:*",

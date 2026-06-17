@@ -25,8 +25,9 @@ interface Props {
 type ActiveChatRun = { id: string; phase: "running" | "stopping" };
 type ResizeDrag = { pointerId: number; startY: number; startHeight: number; moved: boolean };
 const RESPONSE_HEIGHT_MIN = 132;
-const RESPONSE_HEIGHT_MAX = 520;
+const RESPONSE_HEIGHT_MAX_FALLBACK = 1200;
 const RESPONSE_HEIGHT_DEFAULT = 190;
+const CHAT_VIEWPORT_OFFSET = 100;
 const EMPTY_CHAT_MESSAGE =
   "Focus has information about this session. Ask anything to figure out what you were working on, which workflows showed up, or what might be worth automating.";
 
@@ -61,9 +62,14 @@ export function Chat({
   const stopping = activeRun?.phase === "stopping";
   const collapsed = controlledCollapsed ?? uncontrolledCollapsed;
   const serverUserRunIds = new Set(
-    messages.filter((message) => message.role === "user" && message.runId).map((message) => message.runId),
+    messages
+      .filter((message) => message.role === "user" && message.runId)
+      .map((message) => message.runId),
   );
-  const visibleMessages = [...messages, ...pendingMessages.filter((message) => !serverUserRunIds.has(message.runId))]
+  const visibleMessages = [
+    ...messages,
+    ...pendingMessages.filter((message) => !serverUserRunIds.has(message.runId)),
+  ]
     .slice()
     .sort((a, b) => a.createdAt - b.createdAt);
   const showIntro = !running && visibleMessages.length === 0;
@@ -108,6 +114,16 @@ export function Chat({
       if (animationTimerRef.current) clearTimeout(animationTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (collapsed || !showResponse) return;
+    const onResize = () => {
+      setResponseHeight((current) => clamp(current, RESPONSE_HEIGHT_MIN, getMaxResponseHeight()));
+    };
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, [collapsed, showResponse]);
 
   async function send(text: string) {
     const message = text.trim();
@@ -154,6 +170,7 @@ export function Chat({
 
   function startResize(event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
+    setResponseHeight((current) => clamp(current, RESPONSE_HEIGHT_MIN, getMaxResponseHeight()));
     resizeDragRef.current = {
       pointerId: event.pointerId,
       startY: event.clientY,
@@ -168,7 +185,7 @@ export function Chat({
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (Math.abs(event.clientY - drag.startY) > 3) drag.moved = true;
     const nextHeight = drag.startHeight + (drag.startY - event.clientY);
-    setResponseHeight(clamp(nextHeight, RESPONSE_HEIGHT_MIN, RESPONSE_HEIGHT_MAX));
+    setResponseHeight(clamp(nextHeight, RESPONSE_HEIGHT_MIN, getMaxResponseHeight()));
   }
 
   function stopResize(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -213,6 +230,17 @@ export function Chat({
   function setChatCollapsed(nextCollapsed: boolean) {
     if (controlledCollapsed === undefined) setUncontrolledCollapsed(nextCollapsed);
     onCollapsedChange?.(nextCollapsed);
+  }
+
+  function getMaxResponseHeight(): number {
+    const maxChatHeight = Math.max(RESPONSE_HEIGHT_MIN, window.innerHeight - CHAT_VIEWPORT_OFFSET);
+    const chat = rootRef.current?.querySelector<HTMLElement>(".chat");
+    const scrollArea = rootRef.current?.querySelector<HTMLElement>(".chat-scroll-area");
+    if (!chat || !scrollArea) return Math.max(RESPONSE_HEIGHT_MIN, RESPONSE_HEIGHT_MAX_FALLBACK);
+
+    const chromeHeight =
+      chat.getBoundingClientRect().height - scrollArea.getBoundingClientRect().height;
+    return Math.max(RESPONSE_HEIGHT_MIN, maxChatHeight - Math.max(0, chromeHeight));
   }
 
   if (collapsed) {

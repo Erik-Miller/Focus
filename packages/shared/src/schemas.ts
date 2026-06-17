@@ -11,7 +11,9 @@ export const workflowSchema = z.object({
     .describe("How often this appeared (e.g. 'once', 'repeated several times')."),
   automatable: z
     .boolean()
-    .describe("Whether a concrete local script, check, command, or integration could reduce this repeated effort."),
+    .describe(
+      "Whether a concrete local script, check, command, or integration could reduce this repeated effort.",
+    ),
   automationIdea: z
     .string()
     .describe("If automatable, one specific implementation-oriented idea; otherwise empty."),
@@ -56,7 +58,9 @@ export const understandingUpdateSchema = z.object({
   batchSummary: z
     .string()
     .describe("One brief second-person sentence summarizing what this batch added or confirmed."),
-  evidence: z.array(z.string()).describe("Up to 3 short evidence bullets supporting the current intent."),
+  evidence: z
+    .array(z.string())
+    .describe("Up to 3 short evidence bullets supporting the current intent."),
   alternatives: z
     .array(alternativeHypothesisSchema)
     .describe("Up to 2 plausible alternative hypotheses with confidence."),
@@ -66,10 +70,14 @@ export const understandingUpdateSchema = z.object({
   activeApps: z.array(z.string()).describe("Distinct applications seen so far this session."),
   discoveredWorkflows: z
     .array(workflowSchema)
-    .describe("Repeatable workflows discovered so far, with concrete automation candidates when warranted."),
+    .describe(
+      "Repeatable workflows discovered so far, with concrete automation candidates when warranted.",
+    ),
   hypothesisMarkdown: z
     .string()
-    .describe("Compact /hypothesis.md contents: current intent plus at most 3 bullets, no repeated evidence/workflow sections."),
+    .describe(
+      "Compact /hypothesis.md contents: current intent plus at most 3 bullets, no repeated evidence/workflow sections.",
+    ),
   workflowsMarkdown: z
     .string()
     .describe("Compact /workflows.md index of workflows and automation ideas."),

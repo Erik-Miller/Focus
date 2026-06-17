@@ -6,10 +6,9 @@
   "license": "MIT",
   "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "build": "pnpm run build:functions && pnpm run build:web",
-    "build:web": "pnpm --filter @focus/shared run build && pnpm --filter @focus/web run build",
+    "build": "pnpm run build:functions && pnpm run build:desktop",
+    "build:desktop": "pnpm --filter @focus/shared run build && pnpm --filter @focus/desktop run build",
     "build:functions": "pnpm --filter @focus/shared run build && pnpm --filter @focus/functions run build",
-    "dev:web": "pnpm --filter @focus/web run dev",
     "dev:desktop": "pnpm --filter @focus/desktop run dev",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",

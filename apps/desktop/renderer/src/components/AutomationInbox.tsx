@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, Clipboard, Monitor, Terminal, Trash2 } from "lucide-react";
+import { ChevronRight, Clipboard, Monitor, Terminal, Trash2 } from "lucide-react";
 import {
   directAddressText,
   type SavedWorkflow,
@@ -9,6 +9,7 @@ import { callables } from "@/firebase";
 import { getBridge } from "@/platform";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SecondaryPage } from "./SecondaryPage";
 
 type BusyAction = "copy" | "desktop" | "terminal" | "delete";
 type ActionFeedback = { id: string; action: BusyAction; label: string };
@@ -97,55 +98,44 @@ export function AutomationInbox({ items, onBack }: { items: SavedWorkflow[]; onB
   }
 
   return (
-    <main className="secondary-page automation-inbox-page">
-      <header className="secondary-page-nav automation-inbox-page-head">
-        <Button
-          className="secondary-page-back automation-inbox-back report-back"
-          variant="secondary"
-          size="sm"
-          onClick={onBack}
-        >
-          <ArrowLeft aria-hidden />
-        </Button>
-        <div className="secondary-page-title">
-          <h1>Workflow Inbox</h1>
-        </div>
-        <Badge className="secondary-page-count" variant="secondary">
-          {items.length}
-        </Badge>
-      </header>
-
-      <div className="secondary-page-content automation-inbox-content">
-        <section className="automation-inbox">
-          {items.length ? (
-            <div className="saved-workflow-list">
-              {items.map((item) => {
-                const rowBusy = busy && busy.id === item.id ? busy.action : null;
-                const rowFeedback = feedback && feedback.id === item.id ? feedback : null;
-                const rowError = error && error.id === item.id ? error.message : null;
-                return (
-                  <SavedWorkflowRow
-                    key={item.id}
-                    item={item}
-                    busy={rowBusy}
-                    feedback={rowFeedback}
-                    error={rowError}
-                    canLaunch={Boolean(bridge?.runAutomation)}
-                    onCopy={() => copyPrompt(item)}
-                    onLaunch={(target) => launch(item, target)}
-                    onDelete={() => remove(item)}
-                  />
-                );
-              })}
-            </div>
-          ) : (
-            <div className="automation-inbox-empty">
-              <strong>No saved workflows yet</strong>
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
+    <SecondaryPage
+      title="Workflow Inbox"
+      count={items.length}
+      className="automation-inbox-page"
+      headerClassName="automation-inbox-page-head"
+      contentClassName="automation-inbox-content"
+      backClassName="automation-inbox-back report-back"
+      onBack={onBack}
+    >
+      <section className="automation-inbox">
+        {items.length ? (
+          <div className="saved-workflow-list">
+            {items.map((item) => {
+              const rowBusy = busy && busy.id === item.id ? busy.action : null;
+              const rowFeedback = feedback && feedback.id === item.id ? feedback : null;
+              const rowError = error && error.id === item.id ? error.message : null;
+              return (
+                <SavedWorkflowRow
+                  key={item.id}
+                  item={item}
+                  busy={rowBusy}
+                  feedback={rowFeedback}
+                  error={rowError}
+                  canLaunch={Boolean(bridge?.runAutomation)}
+                  onCopy={() => copyPrompt(item)}
+                  onLaunch={(target) => launch(item, target)}
+                  onDelete={() => remove(item)}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div className="automation-inbox-empty">
+            <strong>No saved workflows yet</strong>
+          </div>
+        )}
+      </section>
+    </SecondaryPage>
   );
 }
 

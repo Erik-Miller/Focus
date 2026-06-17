@@ -6,7 +6,13 @@ import { app, BrowserWindow, clipboard, ipcMain, screen, shell, systemPreference
 import liquidGlass from "electron-liquid-glass";
 import { DEFAULT_MONITORING_CONFIG, type DwellInput, type Novelty } from "@focus/shared";
 import { DwellDetector } from "./dwell.js";
-import { captureCursorCrop, captureFullScreen, dHash, hamming, getActiveWindow } from "./capture.js";
+import {
+  captureCursorCrop,
+  captureFullScreen,
+  dHash,
+  hamming,
+  getActiveWindow,
+} from "./capture.js";
 
 const cfg = DEFAULT_MONITORING_CONFIG;
 const isDev = process.env.FOCUS_DEV === "1";
@@ -357,7 +363,7 @@ function createWindow() {
   if (isDev) {
     win.loadURL("http://localhost:5173");
   } else {
-    win.loadFile(path.resolve(__dirname, "..", "..", "web", "dist", "index.html"));
+    win.loadFile(path.resolve(__dirname, "..", "renderer", "dist", "index.html"));
   }
 }
 
