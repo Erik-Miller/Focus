@@ -1,28 +1,32 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { directAddressText, type Observation, type UsageAggregate } from "@focus/shared";
 import { Card } from "@/components/ui/card";
 import {
   loadObservationImages,
   type LocalObservationImages,
 } from "../localObservationImages";
+import type {
+  LiveTimelineBatch,
+  LiveTimelineObservation,
+  LiveTimelineStatus,
+} from "../monitoring";
 import { UsageBar } from "./UsageBar";
 
 export function Timeline({
   sessionId,
   observations,
+  liveBatches = [],
   usage,
 }: {
   sessionId?: string | null;
   observations: Observation[];
+  liveBatches?: LiveTimelineBatch[];
   usage?: UsageAggregate;
 }) {
   const [selectedEntry, setSelectedEntry] = useState<TimelineEntry | null>(null);
-  const entries = buildTimelineEntries(observations);
-  const timelineRef = useRef<HTMLUListElement>(null);
-  const timelineMetricsRef = useRef<TimelineScrollMetrics | null>(null);
+  const entries = buildTimelineEntries(observations, liveBatches);
+  const observedCount = entries.reduce((total, entry) => total + entry.count, 0);
   const localImages = useLocalObservationImages(sessionId ?? null, observations);
-  const timelineLayoutKey = entries.map((entry) => `${entry.id}:${entry.count}`).join("|");
-  const lastEntryId = entries[entries.length - 1]?.id ?? null;
 
   useEffect(() => {
     if (!selectedEntry) return;
@@ -33,34 +37,7 @@ export function Timeline({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedEntry]);
 
-  useLayoutEffect(() => {
-    const node = timelineRef.current;
-    if (!node) return;
-
-    const previous = timelineMetricsRef.current;
-    const nextScrollWidth = node.scrollWidth;
-    const nextMaxScrollLeft = maxScrollLeft(node);
-    const sessionChanged = previous?.sessionId !== sessionId;
-
-    if (!previous || sessionChanged) {
-      node.scrollLeft = nextMaxScrollLeft;
-    } else {
-      const previousMaxScrollLeft = Math.max(0, previous.scrollWidth - previous.clientWidth);
-      const wasNearNewest = previousMaxScrollLeft - node.scrollLeft <= 32;
-      if (wasNearNewest && nextScrollWidth >= previous.scrollWidth) {
-        node.scrollLeft = nextMaxScrollLeft;
-      }
-    }
-
-    timelineMetricsRef.current = {
-      sessionId,
-      lastEntryId,
-      scrollWidth: node.scrollWidth,
-      clientWidth: node.clientWidth,
-    };
-  }, [lastEntryId, sessionId, timelineLayoutKey]);
-
-  if (observations.length === 0) {
+  if (entries.length === 0) {
     return (
       <Card className="timeline-card gap-0 overflow-hidden py-0">
         <TimelineHeader count={0} usage={usage} />
@@ -70,34 +47,41 @@ export function Timeline({
   }
   return (
     <Card className="timeline-card gap-0 overflow-hidden py-0">
-      <TimelineHeader count={observations.length} usage={usage} />
-      <ul className="timeline" ref={timelineRef}>
+      <TimelineHeader count={observedCount} usage={usage} />
+      <ul className="timeline">
         {entries.map((entry) => {
           const o = entry.latest;
-          const pending = entry.pending;
-          const thumbUrl = thumbnailUrlForObservation(o, localImages);
+          const pending = entry.status !== "analyzed";
+          const statusLabel = statusLabelForEntry(entry);
           return (
             <li
               key={entry.id}
               className={`tl-item${pending ? " tl-item-pending" : ""}${
-                entry.count > 1 ? " tl-item-batch" : ""
+                entry.isBatch ? " tl-item-batch" : ""
               }`}
+              data-status={entry.status}
             >
-              <button
-                type="button"
-                className="tl-thumb"
-                onClick={() => setSelectedEntry(entry)}
-                aria-label={`Show ${entry.count} analyzed image${entry.count === 1 ? "" : "s"}`}
-              >
-                {thumbUrl ? (
-                  <img src={thumbUrl} alt={o.app} loading="lazy" />
-                ) : (
-                  <div className="tl-thumb-empty" />
-                )}
-                {entry.count > 1 && <span className="tl-thumb-count">{entry.count}</span>}
-              </button>
+              {entry.isBatch ? (
+                <TimelineImageStrip
+                  entry={entry}
+                  localImages={localImages}
+                  onOpen={() => setSelectedEntry(entry)}
+                />
+              ) : (
+                <TimelineThumb
+                  observation={o}
+                  status={entry.status}
+                  localImages={localImages}
+                  onOpen={() => setSelectedEntry(entry)}
+                />
+              )}
               <div className="tl-body">
-                <div className="tl-title">{entry.title}</div>
+                <div className="tl-title-row">
+                  <div className="tl-title">{entry.title}</div>
+                  <span className="tl-status" data-status={entry.status}>
+                    {statusLabel}
+                  </span>
+                </div>
                 <div className="tl-meta">
                   {entry.context && <span>{entry.context}</span>}
                   <span>{entry.timeLabel}</span>
@@ -107,8 +91,12 @@ export function Timeline({
                     {directAddressText(entry.summary)}
                   </div>
                 ) : (
-                  <div key="pending" className="tl-summary tl-summary-pending">
-                    Analyzing...
+                  <div
+                    key="pending"
+                    className="tl-summary tl-summary-pending"
+                    data-status={entry.status}
+                  >
+                    {pendingTextForEntry(entry)}
                   </div>
                 )}
               </div>
@@ -138,30 +126,33 @@ function TimelineHeader({ count, usage }: { count: number; usage?: UsageAggregat
   );
 }
 
+type TimelineEntryStatus = LiveTimelineStatus | "analyzed";
+type TimelineObservation = (Observation | LiveTimelineObservation) & {
+  cursorCropDataUrl?: string;
+  fullScreenshotDataUrl?: string;
+  cursorCropUrl?: string;
+  fullScreenshotUrl?: string;
+};
+
 interface TimelineEntry {
   id: string;
-  latest: Observation;
-  observations: Observation[];
+  latest: TimelineObservation;
+  observations: TimelineObservation[];
   count: number;
-  pending: boolean;
+  isBatch: boolean;
+  status: TimelineEntryStatus;
   title: string;
   context: string;
   timeLabel: string;
   summary: string;
 }
 
-interface TimelineScrollMetrics {
-  sessionId?: string | null;
-  lastEntryId: string | null;
-  scrollWidth: number;
-  clientWidth: number;
-}
-
-function maxScrollLeft(node: HTMLElement): number {
-  return Math.max(0, node.scrollWidth - node.clientWidth);
-}
-
-function buildTimelineEntries(observations: Observation[]): TimelineEntry[] {
+function buildTimelineEntries(
+  observations: Observation[],
+  liveBatches: LiveTimelineBatch[],
+): TimelineEntry[] {
+  const observedIds = new Set(observations.map((observation) => observation.id));
+  const entries: TimelineEntry[] = [];
   const groups = new Map<string, Observation[]>();
   for (const observation of observations) {
     const key = shouldGroupBatch(observation)
@@ -172,39 +163,74 @@ function buildTimelineEntries(observations: Observation[]): TimelineEntry[] {
     else groups.set(key, [observation]);
   }
 
-  return Array.from(groups.entries())
-    .map(([id, group]) => entryFromGroup(id, group))
-    .sort((a, b) => a.latest.timestamp - b.latest.timestamp);
+  for (const [id, group] of groups) {
+    entries.push(entryFromObservationGroup(id, group));
+  }
+
+  for (const batch of liveBatches) {
+    const liveOnly = batch.observations.filter((observation) => !observedIds.has(observation.id));
+    if (liveOnly.length > 0) entries.push(entryFromLiveBatch(batch, liveOnly));
+  }
+
+  return entries.sort((a, b) => a.latest.timestamp - b.latest.timestamp);
 }
 
 function shouldGroupBatch(observation: Observation): boolean {
   return Boolean(observation.batchId && observation.batchId !== "demo");
 }
 
-function entryFromGroup(id: string, observations: Observation[]): TimelineEntry {
+function entryFromObservationGroup(id: string, observations: Observation[]): TimelineEntry {
   const ordered = [...observations].sort((a, b) => a.timestamp - b.timestamp);
   const latest = ordered[ordered.length - 1];
-  const pending = ordered.some((o) => !o.summary);
+  const status: TimelineEntryStatus = ordered.some((o) => !o.summary) ? "analyzing" : "analyzed";
   const count = ordered.length;
+  const isBatch = id.startsWith("batch:");
   return {
     id,
     latest,
     observations: ordered,
     count,
-    pending,
-    title: titleForEntry(ordered, pending),
+    isBatch,
+    status,
+    title: titleForEntry(ordered, status, isBatch),
     context: contextForEntry(ordered),
     timeLabel: timeLabelForEntry(ordered),
-    summary: pending ? "" : latest.summary,
+    summary: status === "analyzed" ? latest.summary : "",
   };
 }
 
-function titleForEntry(observations: Observation[], pending: boolean): string {
-  if (observations.length === 1) return displayTitle(observations[0]);
-  return pending ? "Analyzing activity" : "Activity";
+function entryFromLiveBatch(
+  batch: LiveTimelineBatch,
+  observations: LiveTimelineObservation[],
+): TimelineEntry {
+  const ordered = [...observations].sort((a, b) => a.timestamp - b.timestamp);
+  const latest = ordered[ordered.length - 1];
+  return {
+    id: `live:${batch.id}`,
+    latest,
+    observations: ordered,
+    count: ordered.length,
+    isBatch: true,
+    status: batch.status,
+    title: titleForEntry(ordered, batch.status, true),
+    context: contextForEntry(ordered),
+    timeLabel: timeLabelForEntry(ordered),
+    summary: "",
+  };
 }
 
-function contextForEntry(observations: Observation[]): string {
+function titleForEntry(
+  observations: TimelineObservation[],
+  status: TimelineEntryStatus,
+  isBatch: boolean,
+): string {
+  if (status === "captured") return "Captured activity";
+  if (status === "analyzing" && isBatch) return "Analyzing activity";
+  if (observations.length === 1) return displayTitle(observations[0]);
+  return "Activity";
+}
+
+function contextForEntry(observations: TimelineObservation[]): string {
   const labels = unique(
     observations
       .map((o) => displayApp(o) || displayTitle(o))
@@ -214,7 +240,7 @@ function contextForEntry(observations: Observation[]): string {
   return `${labels.slice(0, 2).join(", ")} +${labels.length - 2}`;
 }
 
-function timeLabelForEntry(observations: Observation[]): string {
+function timeLabelForEntry(observations: TimelineObservation[]): string {
   const first = observations[0];
   const last = observations[observations.length - 1];
   const start = new Date(first.timestamp).toLocaleTimeString();
@@ -226,6 +252,91 @@ function unique(values: string[]): string[] {
   return Array.from(new Set(values));
 }
 
+function statusLabelForEntry(entry: TimelineEntry): string {
+  return statusLabelForStatus(entry.status);
+}
+
+function statusLabelForStatus(status: TimelineEntryStatus): string {
+  if (status === "captured") return "Captured";
+  if (status === "analyzing") return "Analyzing";
+  return "Analyzed";
+}
+
+function pendingTextForEntry(entry: TimelineEntry): string {
+  if (entry.status === "captured") {
+    return entry.count === 1
+      ? "1 screenshot captured. Waiting for analysis..."
+      : `${entry.count} screenshots captured. Waiting for analysis...`;
+  }
+  return entry.count === 1 ? "Analyzing 1 screenshot..." : `Analyzing ${entry.count} screenshots...`;
+}
+
+function TimelineThumb({
+  observation,
+  status,
+  localImages,
+  onOpen,
+}: {
+  observation: TimelineObservation;
+  status: TimelineEntryStatus;
+  localImages: Map<string, LocalObservationImages>;
+  onOpen: () => void;
+}) {
+  const thumbUrl = thumbnailUrlForObservation(observation, localImages);
+  const statusLabel = statusLabelForStatus(status).toLowerCase();
+  return (
+    <button
+      type="button"
+      className="tl-thumb"
+      onClick={onOpen}
+      aria-label={`Show ${statusLabel} image`}
+    >
+      {thumbUrl ? (
+        <img src={thumbUrl} alt={observation.app} loading="lazy" />
+      ) : (
+        <div className="tl-thumb-empty" />
+      )}
+    </button>
+  );
+}
+
+function TimelineImageStrip({
+  entry,
+  localImages,
+  onOpen,
+}: {
+  entry: TimelineEntry;
+  localImages: Map<string, LocalObservationImages>;
+  onOpen: () => void;
+}) {
+  const visible = entry.observations.slice(-4);
+  const extraCount = Math.max(0, entry.observations.length - visible.length);
+  const statusLabel = statusLabelForEntry(entry).toLowerCase();
+
+  return (
+    <button
+      type="button"
+      className="tl-strip"
+      onClick={onOpen}
+      aria-label={`Show ${entry.count} ${statusLabel} image${entry.count === 1 ? "" : "s"}`}
+    >
+      {visible.map((observation) => {
+        const imageUrl = thumbnailUrlForObservation(observation, localImages);
+        return (
+          <span className="tl-strip-frame" key={observation.id}>
+            {imageUrl ? (
+              <img src={imageUrl} alt={displayTitle(observation)} loading="lazy" />
+            ) : (
+              <span className="tl-strip-empty" />
+            )}
+          </span>
+        );
+      })}
+      {extraCount > 0 && <span className="tl-strip-more">{entry.count}+</span>}
+    </button>
+  );
+}
+
 function BatchImageTray({
   entry,
   localImages,
@@ -235,7 +346,12 @@ function BatchImageTray({
   localImages: Map<string, LocalObservationImages>;
   onClose: () => void;
 }) {
-  const title = "Images being analyzed";
+  const title =
+    entry.status === "captured"
+      ? "Captured images"
+      : entry.status === "analyzing"
+        ? "Images being analyzed"
+        : "Analyzed images";
 
   return (
     <div className="image-tray-backdrop" role="presentation" onMouseDown={onClose}>
@@ -263,7 +379,9 @@ function BatchImageTray({
                 {imageUrl ? (
                   <img src={imageUrl} alt={displayTitle(observation)} loading="lazy" />
                 ) : (
-                  <div className="image-tile-empty">Uploading...</div>
+                  <div className="image-tile-empty">
+                    {entry.status === "captured" ? "Captured" : "Loading..."}
+                  </div>
                 )}
                 <figcaption>
                   <strong>{index + 1}</strong>
@@ -314,47 +432,51 @@ function useLocalObservationImages(
 }
 
 function thumbnailUrlForObservation(
-  observation: Observation,
+  observation: TimelineObservation,
   localImages: Map<string, LocalObservationImages>,
 ): string {
   const local = localImages.get(observation.id);
   return (
     local?.cursorCropDataUrl ??
+    observation.cursorCropDataUrl ??
     observation.cursorCropUrl ??
     local?.fullScreenshotDataUrl ??
+    observation.fullScreenshotDataUrl ??
     observation.fullScreenshotUrl ??
     ""
   );
 }
 
 function trayImageUrlForObservation(
-  observation: Observation,
+  observation: TimelineObservation,
   localImages: Map<string, LocalObservationImages>,
 ): string {
   const local = localImages.get(observation.id);
   return (
     local?.fullScreenshotDataUrl ??
+    observation.fullScreenshotDataUrl ??
     local?.cursorCropDataUrl ??
+    observation.cursorCropDataUrl ??
     observation.fullScreenshotUrl ??
     observation.cursorCropUrl ??
     ""
   );
 }
 
-function displayTitle(observation: Observation): string {
+function displayTitle(observation: TimelineObservation): string {
   const title = observation.windowTitle.trim();
   if (isFocusShellObservation(observation)) return "Focus";
   return title || observation.app || "Observed moment";
 }
 
-function displayApp(observation: Observation): string {
+function displayApp(observation: TimelineObservation): string {
   if (isFocusShellObservation(observation)) return "";
   const app = observation.app.trim();
   const title = observation.windowTitle.trim();
   return app && app.toLowerCase() !== title.toLowerCase() ? app : "";
 }
 
-function isFocusShellObservation(observation: Observation): boolean {
+function isFocusShellObservation(observation: TimelineObservation): boolean {
   const app = observation.app.trim().toLowerCase();
   const title = observation.windowTitle.trim().toLowerCase();
   return app === "electron" && (title === "focus" || title.includes("attention-observing agent"));

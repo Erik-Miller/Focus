@@ -3,8 +3,8 @@
 **An agent that watches your attention and explains your work.**
 
 Focus is a Deep Agent–powered "smart sensor." During a real work session it observes brief
-_moments of attention_ — points where your cursor pauses — captures the context (a full‑screen
-frame, a 250×250 crop around the cursor, the active app, and the window title), and a
+_moments of attention_ — points where your cursor pauses — captures the context (a 250×250 crop
+around the cursor, occasional full-screen frames, the active app, and the window title), and a
 **Deep Agent (LangChain `deepagents` + Gemini 3.5 Flash)** gradually builds an evolving hypothesis
 of what you're working on. When you stop, you can **chat with the agent** about the workflows it
 noticed and which would be good to automate later, and generate a narrative **session report**.
@@ -17,7 +17,7 @@ and the report/chat are the artifacts. It deliberately does **not** take actions
 ```
 Electron (macOS)                Firebase                         Gemini
   dwell detector  ──dwell──▶  processObservations ─┐
-  full + 250² crop            chatWithAgent        ├─▶ Deep Agent (deepagents)
+  250² crop + full cadence    chatWithAgent        ├─▶ Deep Agent (deepagents)
   active-win (osascript)      generateReport       │     gemini-3.5-flash
   dHash novelty filter        seedDemoSession      └─▶ structured output + usage
         │                          │  ▲

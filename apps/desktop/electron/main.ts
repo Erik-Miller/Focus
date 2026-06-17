@@ -6,11 +6,13 @@ import { app, BrowserWindow, clipboard, ipcMain, screen, shell, systemPreference
 import liquidGlass from "electron-liquid-glass";
 import { DEFAULT_MONITORING_CONFIG, type DwellInput, type Novelty } from "@focus/shared";
 import { DwellDetector } from "./dwell.js";
-import { captureFrame, dHash, hamming, getActiveWindow } from "./capture.js";
+import { captureCursorCrop, captureFullScreen, dHash, hamming, getActiveWindow } from "./capture.js";
 
 const cfg = DEFAULT_MONITORING_CONFIG;
 const isDev = process.env.FOCUS_DEV === "1";
 const execFileAsync = promisify(execFile);
+const APP_ICON_PATH = path.resolve(__dirname, "..", "assets", "focus-icon-1024.png");
+const APP_DOCK_ICON_PATH = path.resolve(__dirname, "..", "assets", "focus-dock-icon-1024.png");
 
 // Focus is a frameless, transparent, always-on-top floating utility panel (a
 // "docklet"): renderer-owned chrome + CSS drag regions, native bounds animation
@@ -53,6 +55,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let capturing = false;
 const detector = new DwellDetector(cfg.dwellMs, cfg.dwellRadiusPx);
 let lastEmitted: { hash: string; app: string; title: string } = { hash: "", app: "", title: "" };
+let emittedSnapshotCount = 0;
 
 type AutomationTarget = "desktop" | "terminal";
 interface AutomationLaunchInput {
@@ -315,6 +318,7 @@ function createWindow() {
     acceptFirstMouse: true,
     alwaysOnTop: keepInFront,
     roundedCorners: true,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -357,6 +361,12 @@ function createWindow() {
   }
 }
 
+function applyAppIcon() {
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(APP_DOCK_ICON_PATH);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Capture / dwell
 // ---------------------------------------------------------------------------
@@ -374,6 +384,12 @@ function classifyNovelty(hash: string, appName: string, title: string): Novelty 
   return "low";
 }
 
+function shouldCaptureFullScreen(nextSnapshotNumber: number): boolean {
+  const cadence = cfg.fullScreenshotEverySnapshots;
+  if (cadence <= 0) return false;
+  return nextSnapshotNumber % cadence === 0;
+}
+
 async function onDwell() {
   if (capturing || !win) return;
   capturing = true;
@@ -381,16 +397,22 @@ async function onDwell() {
   try {
     const cursor = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(cursor).bounds;
-    const [{ fullDataUrl, cropDataUrl, cropImage }, activeWin] = await Promise.all([
-      captureFrame(cursor, display, cfg.captureSize),
+    const [{ cropDataUrl, cropImage }, activeWin] = await Promise.all([
+      captureCursorCrop(cursor, display, cfg.captureSize),
       getActiveWindow(),
     ]);
+    if (!cropDataUrl || !cropImage) return;
 
-    const hash = cropImage ? dHash(cropImage) : "";
+    const hash = dHash(cropImage);
     const novelty = classifyNovelty(hash, activeWin.app, activeWin.title);
     if (novelty === "duplicate") return;
 
+    const nextSnapshotNumber = emittedSnapshotCount + 1;
+    const fullDataUrl = shouldCaptureFullScreen(nextSnapshotNumber)
+      ? await captureFullScreen()
+      : undefined;
     lastEmitted = { hash, app: activeWin.app, title: activeWin.title };
+    emittedSnapshotCount = nextSnapshotNumber;
 
     const dwell: DwellInput = {
       timestamp: Date.now(),
@@ -414,6 +436,7 @@ async function onDwell() {
 
 function startCapture() {
   if (pollTimer) return;
+  emittedSnapshotCount = 0;
   pollTimer = setInterval(() => {
     const p = screen.getCursorScreenPoint();
     if (detector.tick(p.x, p.y, Date.now())) {
@@ -565,7 +588,10 @@ ipcMain.handle("focus:permissions", () => {
   return { screen: screenStatus, accessibility };
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  applyAppIcon();
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   stopCapture();

@@ -5,7 +5,6 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { ChevronRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { directAddressText, type ChatMessage } from "@focus/shared";
 import { callables } from "../firebase";
@@ -19,11 +18,12 @@ interface Props {
   messages: ChatMessage[];
   enabled: boolean;
   onHeightChange?: (height: number) => void;
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 type ActiveChatRun = { id: string; phase: "running" | "stopping" };
 type ResizeDrag = { pointerId: number; startY: number; startHeight: number; moved: boolean };
-const COMPACT_AGENT_MESSAGE_CHARS = 420;
 const RESPONSE_HEIGHT_MIN = 132;
 const RESPONSE_HEIGHT_MAX = 520;
 const RESPONSE_HEIGHT_DEFAULT = 190;
@@ -36,11 +36,18 @@ const SUGGESTIONS = [
   "Which of these should I automate later?",
 ];
 
-export function Chat({ sessionId, messages, enabled, onHeightChange }: Props) {
+export function Chat({
+  sessionId,
+  messages,
+  enabled,
+  onHeightChange,
+  collapsed: controlledCollapsed,
+  onCollapsedChange,
+}: Props) {
   const [input, setInput] = useState("");
   const [activeRun, setActiveRun] = useState<ActiveChatRun | null>(null);
   const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([]);
-  const [collapsed, setCollapsed] = useState(false);
+  const [uncontrolledCollapsed, setUncontrolledCollapsed] = useState(false);
   const [collapsing, setCollapsing] = useState(false);
   const [opening, setOpening] = useState(false);
   const [responseHeight, setResponseHeight] = useState(RESPONSE_HEIGHT_DEFAULT);
@@ -52,6 +59,7 @@ export function Chat({ sessionId, messages, enabled, onHeightChange }: Props) {
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const running = activeRun !== null;
   const stopping = activeRun?.phase === "stopping";
+  const collapsed = controlledCollapsed ?? uncontrolledCollapsed;
   const serverUserRunIds = new Set(
     messages.filter((message) => message.role === "user" && message.runId).map((message) => message.runId),
   );
@@ -185,7 +193,7 @@ export function Chat({ sessionId, messages, enabled, onHeightChange }: Props) {
     setOpening(false);
     setCollapsing(true);
     animationTimerRef.current = setTimeout(() => {
-      setCollapsed(true);
+      setChatCollapsed(true);
       setCollapsing(false);
       animationTimerRef.current = null;
     }, 190);
@@ -193,13 +201,18 @@ export function Chat({ sessionId, messages, enabled, onHeightChange }: Props) {
 
   function expandChat() {
     if (animationTimerRef.current) clearTimeout(animationTimerRef.current);
-    setCollapsed(false);
+    setChatCollapsed(false);
     setCollapsing(false);
     setOpening(true);
     animationTimerRef.current = setTimeout(() => {
       setOpening(false);
       animationTimerRef.current = null;
     }, 220);
+  }
+
+  function setChatCollapsed(nextCollapsed: boolean) {
+    if (controlledCollapsed === undefined) setUncontrolledCollapsed(nextCollapsed);
+    onCollapsedChange?.(nextCollapsed);
   }
 
   if (collapsed) {
@@ -314,6 +327,7 @@ export function Chat({ sessionId, messages, enabled, onHeightChange }: Props) {
           />
           <Button
             type={running ? "button" : "submit"}
+            className={running ? "chat-submit chat-submit-stop" : "chat-submit"}
             variant={running ? "secondary" : "default"}
             onClick={running ? stopActiveRun : undefined}
             disabled={stopping || (!running && (!enabled || !input.trim()))}
@@ -339,21 +353,7 @@ function createRunId(): string {
 function AgentMessage({ content }: { content: string }) {
   const addressedContent = directAddressText(content);
   const markdown = formatAgentMarkdown(addressedContent);
-  const compact = compactAgentMessage(addressedContent);
-  if (!compact.collapsed) return <MarkdownMessage content={markdown} />;
-
-  return (
-    <div className="msg-compact">
-      <MarkdownMessage content={formatAgentMarkdown(compact.preview)} />
-      <details className="chat-details">
-        <summary>
-          <ChevronRight className="summary-chevron" aria-hidden />
-          <span>Details</span>
-        </summary>
-        <MarkdownMessage content={markdown} />
-      </details>
-    </div>
-  );
+  return <MarkdownMessage content={markdown} />;
 }
 
 function MarkdownMessage({ content }: { content: string }) {
@@ -374,7 +374,10 @@ const AGENT_FIELD_LABELS = [
   "Next step",
   "Suggested next step",
 ];
-const AGENT_FIELD_PATTERN = new RegExp(`^(${AGENT_FIELD_LABELS.join("|")}):\\s+(.+)$`, "i");
+const AGENT_FIELD_LINE_PATTERN = new RegExp(
+  `^(?:[-*+]\\s+)?(?:\\*\\*)?(${AGENT_FIELD_LABELS.join("|")}):(?:\\*\\*)?\\s+(.+)$`,
+  "i",
+);
 
 function formatAgentMarkdown(content: string): string {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
@@ -382,7 +385,12 @@ function formatAgentMarkdown(content: string): string {
 
   lines.forEach((line, index) => {
     const trimmed = line.trim();
-    const field = trimmed.match(AGENT_FIELD_PATTERN);
+    const field = trimmed.match(AGENT_FIELD_LINE_PATTERN);
+
+    if (isHorizontalRule(trimmed)) {
+      if (formatted.length && formatted[formatted.length - 1] !== "") formatted.push("");
+      return;
+    }
 
     if (isPlainAgentHeading(lines, index)) {
       if (formatted.length && formatted[formatted.length - 1] !== "") formatted.push("");
@@ -390,8 +398,8 @@ function formatAgentMarkdown(content: string): string {
       return;
     }
 
-    if (field && !isMarkdownLine(trimmed)) {
-      formatted.push(`- **${formatFieldLabel(field[1])}:** ${field[2].trim()}`);
+    if (field) {
+      formatted.push(`**${formatFieldLabel(field[1])}:** ${field[2].trim()}`);
       return;
     }
 
@@ -408,7 +416,11 @@ function isPlainAgentHeading(lines: string[], index: number): boolean {
   }
 
   const next = nextNonEmptyLine(lines, index + 1);
-  return Boolean(next && AGENT_FIELD_PATTERN.test(next.trim()));
+  return Boolean(next && AGENT_FIELD_LINE_PATTERN.test(next.trim()));
+}
+
+function isHorizontalRule(line: string): boolean {
+  return /^(?:-{3,}|\*{3,}|_{3,})$/.test(line);
 }
 
 function nextNonEmptyLine(lines: string[], startIndex: number): string | null {
@@ -426,23 +438,4 @@ function isMarkdownLine(line: string): boolean {
 function formatFieldLabel(label: string): string {
   const normalized = label.toLowerCase();
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
-function compactAgentMessage(content: string): { collapsed: boolean; preview: string } {
-  const trimmed = content.trim();
-  if (trimmed.length <= COMPACT_AGENT_MESSAGE_CHARS) {
-    return { collapsed: false, preview: trimmed };
-  }
-
-  const paragraphs = trimmed
-    .split(/\n{2,}/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const firstParagraph = paragraphs[0] ?? trimmed;
-  const preview =
-    firstParagraph.length <= COMPACT_AGENT_MESSAGE_CHARS
-      ? firstParagraph
-      : `${firstParagraph.slice(0, COMPACT_AGENT_MESSAGE_CHARS).trim()}…`;
-
-  return { collapsed: true, preview };
 }

@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { directAddressReport, type Observation, type Report } from "@focus/shared";
 import { Card } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { WorkflowCard } from "./WorkflowCard";
 
 export function ReportView({
@@ -13,91 +15,135 @@ export function ReportView({
 }) {
   const viewReport = directAddressReport(report);
   const timelineMarkdown = localizeTimelineMarkdown(viewReport.timelineMarkdown, observations);
+  const focusAreaTags = viewReport.focusAreas.map((focusArea) => ({
+    raw: focusArea,
+    label: compactFocusAreaTag(focusArea),
+  }));
   const automationCandidates =
     viewReport.workflows?.length > 0 ? (
-      <div className="workflows report-top-workflows">
-        {viewReport.workflows.map((w, i) => (
-          <WorkflowCard
-            key={`${w.name}-report-${i}`}
-            workflow={w}
-            context={{
-              label: "Focus generated this report objective",
-              value: viewReport.objective,
-              fallback: "(No report objective captured.)",
-            }}
-            source={{
-              sessionId: viewReport.sessionId,
-              reportId: viewReport.id,
-              title: viewReport.objective || "Session report",
-            }}
-            spotlight={w.automatable}
-          />
-        ))}
+      <div className="report-top-workflows">
+        <h3 className="report-section-heading">Recommended workflows</h3>
+        <div className="workflows">
+          {viewReport.workflows.map((w, i) => (
+            <WorkflowCard
+              key={`${w.name}-report-${i}`}
+              workflow={w}
+              context={{
+                label: "Focus generated this summary objective",
+                value: viewReport.objective,
+                fallback: "(No summary objective captured.)",
+              }}
+              source={{
+                sessionId: viewReport.sessionId,
+                reportId: viewReport.id,
+                title: viewReport.objective || "Session summary",
+              }}
+              spotlight={w.automatable}
+            />
+          ))}
+        </div>
       </div>
     ) : null;
 
   return (
     <Card className="report gap-0 overflow-hidden py-0">
       <div className="report-body">
-        {automationCandidates}
-
-        {viewReport.focusAreas?.length > 0 && (
+        {focusAreaTags.length > 0 && (
           <div className="report-focus-areas">
-            <div className="report-section-label">Focus areas</div>
+            <h3 className="report-section-heading">Focus areas</h3>
             <div className="report-focus-pill-row">
-              {viewReport.focusAreas.map((f, i) => (
-                <span className="report-focus-pill" key={`${f}-${i}`}>
-                  {f}
+              {focusAreaTags.map((focusArea, i) => (
+                <span className="report-focus-pill" key={`${focusArea.raw}-${i}`} title={focusArea.raw}>
+                  {focusArea.label}
                 </span>
               ))}
             </div>
           </div>
         )}
 
+        {automationCandidates}
+
         <div className="md-block report-narrative">
           <ReactMarkdown>{formatReportNarrative(viewReport.narrative)}</ReactMarkdown>
         </div>
 
         {timelineMarkdown && (
-          <details className="report-section" open>
-            <summary>
-              <ChevronRight className="summary-chevron" aria-hidden />
-              <span>Timeline</span>
-            </summary>
+          <ReportAccordionSection title="Timeline">
             <div className="md-block">
               <ReactMarkdown>{timelineMarkdown}</ReactMarkdown>
             </div>
-          </details>
+          </ReportAccordionSection>
         )}
 
         {viewReport.interpretations && (
-          <details className="report-section" open>
-            <summary>
-              <ChevronRight className="summary-chevron" aria-hidden />
-              <span>Interpretation</span>
-            </summary>
+          <ReportAccordionSection title="Interpretation">
             <div className="md-block">
               <ReactMarkdown>{viewReport.interpretations}</ReactMarkdown>
             </div>
-          </details>
+          </ReportAccordionSection>
         )}
 
         {viewReport.nextSteps?.length > 0 && (
-          <details className="report-section" open>
-            <summary>
-              <ChevronRight className="summary-chevron" aria-hidden />
-              <span>Suggested next steps</span>
-            </summary>
-            <ul>
+          <ReportAccordionSection title="Suggested next steps">
+            <ul className="report-next-steps">
               {viewReport.nextSteps.map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
             </ul>
-          </details>
+          </ReportAccordionSection>
         )}
       </div>
     </Card>
   );
+}
+
+function ReportAccordionSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Collapsible className="report-accordion">
+      <CollapsibleTrigger className="report-accordion-trigger">
+        <span>{title}</span>
+        <ChevronDown className="report-accordion-chevron" aria-hidden />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="report-accordion-content">{children}</CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function compactFocusAreaTag(area: string): string {
+  let tag = area
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[.!?]+$/g, "")
+    .replace(/^[-*]\s*/, "");
+
+  const cnnFoxMatch = tag.match(/\bcoverage\s+between\s+(CNN)\s+and\s+(Fox(?:\s+News)?)\b/i);
+  if (cnnFoxMatch) return "CNN vs Fox coverage";
+
+  if (/\bTrump\b/i.test(tag) && /\bG7\b/i.test(tag) && /\bupdates?\b/i.test(tag)) {
+    return "Trump G7 updates";
+  }
+
+  if (/\bUS[-\s]Iran\b/i.test(tag) && /\b14[-\s]point\b/i.test(tag)) {
+    return "US-Iran 14-point deal";
+  }
+
+  tag = tag
+    .replace(
+      /^(comparing|tracking|dissecting|reviewing|monitoring|analyzing|exploring|following|checking)\s+/i,
+      "",
+    )
+    .replace(/^the\s+details\s+of\s+/i, "")
+    .replace(/\s+updates?$/i, "")
+    .replace(/^President\s+Trump'?s?\s+/i, "Trump ")
+    .replace(/\bFox News\b/g, "Fox");
+
+  return shortenTag(tag);
+}
+
+function shortenTag(tag: string): string {
+  const words = tag.split(" ");
+  if (tag.length <= 32 || words.length <= 4) return tag;
+  return `${words.slice(0, 4).join(" ")}...`;
 }
 
 function formatReportNarrative(markdown: string): string {
@@ -106,12 +152,22 @@ function formatReportNarrative(markdown: string): string {
   if (firstContentIndex === -1) return markdown;
 
   const firstLine = lines[firstContentIndex].trim();
-  if (/^#{1,6}\s/.test(firstLine)) return markdown;
-
-  if (/^(Field Report|Session Report|Report):/i.test(firstLine)) {
+  const fieldReportHeading = fieldReportHeadingFromReportHeading(firstLine);
+  if (/^#{1,6}\s/.test(firstLine)) {
+    if (!fieldReportHeading) return markdown;
     return [
       ...lines.slice(0, firstContentIndex),
-      `### ${firstLine}`,
+      fieldReportHeading,
+      ...lines.slice(firstContentIndex + 1),
+    ]
+      .join("\n")
+      .trim();
+  }
+
+  if (fieldReportHeading) {
+    return [
+      ...lines.slice(0, firstContentIndex),
+      `### ${fieldReportHeading}`,
       "",
       ...lines.slice(firstContentIndex + 1),
     ]
@@ -119,7 +175,22 @@ function formatReportNarrative(markdown: string): string {
       .trim();
   }
 
-  return markdown;
+  return [
+    ...lines.slice(0, firstContentIndex),
+    "### Field report",
+    "",
+    ...lines.slice(firstContentIndex),
+  ]
+    .join("\n")
+    .trim();
+}
+
+function fieldReportHeadingFromReportHeading(line: string): string | null {
+  const match = line.match(/^(#{1,6}\s*)?(Field Report|Session Report|Report)(\s*:)?(.*)$/i);
+  if (!match) return null;
+  const prefix = match[1] ?? "";
+  const suffix = match[4]?.trim();
+  return `${prefix}Field report${suffix ? `: ${suffix}` : ""}`;
 }
 
 function localizeTimelineMarkdown(markdown: string, observations: Observation[]): string {

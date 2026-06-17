@@ -1,6 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import type { Session } from "@focus/shared";
-import { db, FieldValue } from "../firebaseApp.js";
+import { db, bucket, FieldValue } from "../firebaseApp.js";
 import { CALLABLE_OPTS, emptyUsageAggregate, requireAuth } from "./common.js";
 
 export const startSession = onCall(CALLABLE_OPTS, async (request) => {
@@ -65,3 +65,31 @@ export const resumeSession = onCall(CALLABLE_OPTS, async (request) => {
   });
   return { ok: true };
 });
+
+export const deleteSession = onCall(
+  { timeoutSeconds: 120, memory: "512MiB", region: "us-central1" },
+  async (request) => {
+    const uid = requireAuth(request);
+    const sessionId = cleanSessionId(request.data?.sessionId);
+    if (!sessionId) throw new HttpsError("invalid-argument", "Valid sessionId required.");
+
+    const ref = db.collection("sessions").doc(sessionId);
+    const snap = await ref.get();
+    if (!snap.exists) return { ok: true };
+
+    const session = snap.data() as Session;
+    if (session.ownerUid !== uid) {
+      throw new HttpsError("permission-denied", "You can only delete your own sessions.");
+    }
+
+    await db.recursiveDelete(ref);
+    await bucket.deleteFiles({ prefix: `screenshots/${sessionId}/`, force: true });
+    return { ok: true };
+  },
+);
+
+function cleanSessionId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  return /^[A-Za-z0-9_-]{1,160}$/.test(id) ? id : null;
+}

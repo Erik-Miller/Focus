@@ -84,7 +84,9 @@ export const significantScreenshotSchema = z.object({
 
 export const reportContentSchema = z.object({
   objective: z.string().describe("Your overall objective for the session."),
-  focusAreas: z.array(z.string()).describe("Key areas you focused on."),
+  focusAreas: z
+    .array(z.string())
+    .describe("Compact focus tags: 2-5 word noun phrases, no leading gerunds or trailing periods."),
   timelineMarkdown: z
     .string()
     .describe(
@@ -102,7 +104,7 @@ export const reportContentSchema = z.object({
   nextSteps: z.array(z.string()).describe("Suggested next steps for you."),
   narrative: z
     .string()
-    .describe("A polished, second-person field-report style narrative of the whole session."),
+    .describe("A polished, second-person work-journal style narrative of the whole session."),
 });
 
 export type ReportContent = z.infer<typeof reportContentSchema>;

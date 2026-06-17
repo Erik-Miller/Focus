@@ -1,20 +1,40 @@
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Trash2 } from "lucide-react";
 import type { Session } from "@focus/shared";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface Props {
   sessions: Session[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  onDelete?: (id: string) => Promise<void> | void;
   overlay?: boolean;
 }
 
-export function SessionList({ sessions, activeId, onSelect, overlay = false }: Props) {
+export function SessionList({ sessions, activeId, onSelect, onDelete, overlay = false }: Props) {
   const [open, setOpen] = useState(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   if (sessions.length === 0) return null;
+
+  const deleteSession = async (session: Session) => {
+    if (!onDelete || deletingId) return;
+    const sessionLabel = label(session);
+    const confirmed = window.confirm(`Delete "${sessionLabel}"? This cannot be undone.`);
+    if (!confirmed) {
+      setMenuOpenId(null);
+      return;
+    }
+
+    setDeletingId(session.id);
+    try {
+      await onDelete(session.id);
+      setMenuOpenId(null);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <Card
@@ -33,22 +53,57 @@ export function SessionList({ sessions, activeId, onSelect, overlay = false }: P
           <ul className="sl-list">
             {sessions.map((s) => (
               <li key={s.id}>
-                <button
-                  type="button"
-                  className={`sl-item${s.id === activeId ? " is-current" : ""}`}
-                  onClick={() => {
-                    onSelect(s.id);
-                    if (overlay) setOpen(false);
-                  }}
-                >
-                  <span className={`sl-status sl-${s.status}`} aria-hidden />
-                  <span className="sl-body">
-                    <span className="sl-name">{label(s)}</span>
-                    <span className="sl-meta">{when(s)}</span>
-                  </span>
-                  {s.status === "reporting" && <span className="sl-tag sl-tag-live">report…</span>}
-                  {s.reportId && <Badge variant="secondary">report</Badge>}
-                </button>
+                <div className={`sl-row${s.id === activeId ? " is-current" : ""}`}>
+                  <button
+                    type="button"
+                    className="sl-item"
+                    onClick={() => {
+                      setMenuOpenId(null);
+                      onSelect(s.id);
+                      if (overlay) setOpen(false);
+                    }}
+                  >
+                    <span className={`sl-status sl-${s.status}`} aria-hidden />
+                    <span className="sl-body">
+                      <span className="sl-name">{label(s)}</span>
+                      <span className="sl-meta">{when(s)}</span>
+                    </span>
+                    {s.status === "reporting" && (
+                      <span className="sl-tag sl-tag-live">summary…</span>
+                    )}
+                  </button>
+                  {onDelete && (
+                    <span className="sl-actions">
+                      <button
+                        type="button"
+                        className="sl-more"
+                        aria-label={`Session actions for ${label(s)}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpenId === s.id}
+                        disabled={deletingId === s.id}
+                        onClick={() =>
+                          setMenuOpenId((current) => (current === s.id ? null : s.id))
+                        }
+                      >
+                        <MoreHorizontal aria-hidden />
+                      </button>
+                      {menuOpenId === s.id && (
+                        <span className="sl-menu" role="menu">
+                          <button
+                            type="button"
+                            className="sl-menu-item sl-menu-delete"
+                            role="menuitem"
+                            disabled={deletingId === s.id}
+                            onClick={() => void deleteSession(s)}
+                          >
+                            <Trash2 aria-hidden />
+                            <span>{deletingId === s.id ? "Deleting..." : "Delete session"}</span>
+                          </button>
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

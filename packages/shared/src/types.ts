@@ -153,7 +153,7 @@ export interface DwellInput {
   dwellMs: number;
   novelty: Novelty;
   frameHash: string;
-  /** data URL (jpeg) of the full screen, downscaled. */
+  /** data URL (jpeg) of the full screen, downscaled and captured on cadence. */
   fullScreenshotDataUrl?: string;
   /** data URL (jpeg) of the 250x250 cursor crop. */
   cursorCropDataUrl?: string;

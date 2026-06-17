@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Monitor, Save, Terminal } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Monitor, Save, Terminal, Zap } from "lucide-react";
 import { directAddressText, type Workflow } from "@focus/shared";
 import { buildAutomationPrompt, type WorkflowContext, type WorkflowSource } from "@/automation";
 import { callables } from "@/firebase";
@@ -17,19 +17,34 @@ type WorkflowCardProps = {
 export function WorkflowCard({ workflow, context, source, spotlight = false }: WorkflowCardProps) {
   const [launching, setLaunching] = useState<AutomationLaunchTarget | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveConfirmed, setSaveConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const saveFeedbackTimerRef = useRef<number | null>(null);
   const bridge = getBridge();
   const hasAutomationCandidate = Boolean(workflow.automatable && workflow.automationIdea);
   const canLaunch = Boolean(bridge?.runAutomation && hasAutomationCandidate);
   const description = directAddressText(workflow.description);
   const automationIdea = directAddressText(workflow.automationIdea);
 
+  useEffect(() => {
+    return () => {
+      if (saveFeedbackTimerRef.current !== null) {
+        window.clearTimeout(saveFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
   async function saveForLater() {
     if (!hasAutomationCandidate) return;
     const prompt = buildAutomationPrompt(workflow, context);
     setError(null);
     setNotice(null);
+    setSaveConfirmed(false);
+    if (saveFeedbackTimerRef.current !== null) {
+      window.clearTimeout(saveFeedbackTimerRef.current);
+      saveFeedbackTimerRef.current = null;
+    }
     setSaving(true);
     try {
       const input = {
@@ -41,7 +56,11 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
       await callables.saveWorkflowForLater(
         source.reportId ? { ...input, sourceReportId: source.reportId } : input,
       );
-      setNotice("Saved to Automation Inbox.");
+      setSaveConfirmed(true);
+      saveFeedbackTimerRef.current = window.setTimeout(() => {
+        setSaveConfirmed(false);
+        saveFeedbackTimerRef.current = null;
+      }, 1000);
     } catch (err) {
       console.error("Failed to save workflow", err);
       setError(errorMessage(err, "Failed to save workflow. Try again."));
@@ -55,6 +74,7 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
     const prompt = buildAutomationPrompt(workflow, context);
     setError(null);
     setNotice(null);
+    setSaveConfirmed(false);
     setLaunching(target);
     try {
       if (!bridge?.runAutomation) {
@@ -86,7 +106,16 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
     <div className={spotlight ? "workflow workflow-spotlight" : "workflow"}>
       <div className="workflow-head">
         <strong>{workflow.name}</strong>
-        {workflow.automatable && <Badge variant="secondary">automatable</Badge>}
+        {workflow.automatable && (
+          <Badge
+            className="workflow-automation-badge"
+            variant="outline"
+            title="This workflow is ready to launch as an automation"
+          >
+            <Zap aria-hidden />
+            Automation-ready
+          </Badge>
+        )}
       </div>
       <p className="muted">{description}</p>
       {hasAutomationCandidate && (
@@ -96,23 +125,19 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
       )}
       {hasAutomationCandidate && (
         <>
-          <p className="automation-hint">
-            {canLaunch
-              ? "Claude Desktop opens with the prompt copied, ready for you to paste."
-              : "In Focus desktop, this copies the prompt and opens Claude Desktop."}
-          </p>
           <div className="automation-actions">
             <Button
               type="button"
-              className="automation-action-save"
+              className={saveConfirmed ? "automation-action-save is-saved" : "automation-action-save"}
               size="sm"
               variant="secondary"
               onClick={saveForLater}
               disabled={saving || launching !== null}
-              title="Save this automation prompt for later"
+              title={saveConfirmed ? "Saved to Workflow Inbox." : "Save this automation prompt for later"}
+              aria-label={saveConfirmed ? "Saved to Workflow Inbox." : "Save this automation prompt for later"}
             >
-              <Save />
-              {saving ? "Saving" : "Save"}
+              {saveConfirmed ? <Check /> : <Save />}
+              {saveConfirmed ? "Saved" : saving ? "Saving" : "Save"}
             </Button>
             <Button
               type="button"
@@ -140,7 +165,7 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
               title={canLaunch ? "Open Terminal and run Claude CLI" : "Available in Focus desktop"}
             >
               <Terminal />
-              {launching === "terminal" ? "Opening" : "Terminal"}
+              {launching === "terminal" ? "Opening Claude Terminal" : "Claude Terminal"}
             </Button>
           </div>
           {!bridge?.runAutomation && (

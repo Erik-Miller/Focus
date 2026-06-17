@@ -9,7 +9,11 @@ import {
 import { ArrowLeft, Inbox as InboxIcon } from "lucide-react";
 import { ensureSignedIn, callables } from "../firebase";
 import { getBridge, isDesktop, type CaptureState } from "../platform";
-import { MonitoringController, type MonitoringStatus } from "../monitoring";
+import {
+  MonitoringController,
+  type LiveTimelineBatch,
+  type MonitoringStatus,
+} from "../monitoring";
 import type { Observation, Report, Session } from "@focus/shared";
 import {
   useChat,
@@ -31,6 +35,13 @@ import { Button } from "@/components/ui/button";
 const SESSION_KEY = "focus.sessionId";
 type AppPage = "monitor" | "report" | "inbox";
 type LiveMonitoringPhase = "monitoring" | "capturing" | "analyzing" | "stopping";
+type StartMonitoringPhase = "starting" | "resuming";
+type ReportStartCountdown = {
+  sessionId: string;
+  targetAt: number;
+};
+
+const REPORT_START_COUNTDOWN_MS = 20_000;
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -47,12 +58,22 @@ export function App() {
   const [expanded, setExpanded] = useState(true);
   const [page, setPage] = useState<AppPage>("monitor");
   const [chatDockHeight, setChatDockHeight] = useState(0);
+  const [desktopChatCollapsed, setDesktopChatCollapsed] = useState(false);
+  const [startingMonitoring, setStartingMonitoring] = useState<StartMonitoringPhase | null>(null);
+  const [localMonitoringSessionId, setLocalMonitoringSessionId] = useState<string | null>(null);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
+  const [reportStartCountdown, setReportStartCountdown] = useState<ReportStartCountdown | null>(
+    null,
+  );
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
   const [monitoringStatus, setMonitoringStatus] = useState<MonitoringStatus>({
     phase: "idle",
     bufferCount: 0,
   });
+  const [liveTimelineBatches, setLiveTimelineBatches] = useState<LiveTimelineBatch[]>([]);
   const controllerRef = useRef<MonitoringController | null>(null);
+  const controllerSessionIdRef = useRef<string | null>(null);
+  const viewedSessionIdRef = useRef<string | null>(sessionId);
   const dwellUnsubRef = useRef<(() => void) | null>(null);
   const captureStateUnsubRef = useRef<(() => void) | null>(null);
   const captureIdleTimerRef = useRef<number | null>(null);
@@ -67,6 +88,8 @@ export function App() {
 
   // Switch the viewed session (review past sessions + their reports).
   const selectSession = useCallback((id: string) => {
+    viewedSessionIdRef.current = id;
+    setLiveTimelineBatches([]);
     setSessionId(id);
     setPage("monitor");
     setExpanded(true);
@@ -74,10 +97,40 @@ export function App() {
   }, []);
 
   const reporting = session?.status === "reporting";
+  const startingLabel = startingMonitoring
+    ? startingMonitoring === "resuming"
+      ? "Resuming monitoring"
+      : "Starting monitoring"
+    : null;
+  const reportStartCountdownLabel = formatReportStartCountdown(
+    reportStartCountdown?.sessionId === sessionId
+      ? Math.max(0, Math.ceil((reportStartCountdown.targetAt - countdownNow) / 1000))
+      : null,
+    Boolean(report || session?.reportId),
+  );
+  const reportStartQueued = Boolean(reportStartCountdownLabel);
 
   useEffect(() => {
     ensureSignedIn().then(() => setReady(true));
   }, []);
+
+  useEffect(() => {
+    viewedSessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!reportStartCountdown) return;
+    setCountdownNow(Date.now());
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [reportStartCountdown]);
+
+  useEffect(() => {
+    if (!reportStartCountdown) return;
+    if (reportStartCountdown.sessionId !== sessionId) {
+      setReportStartCountdown(null);
+    }
+  }, [reportStartCountdown, sessionId]);
 
   useEffect(() => {
     return () => {
@@ -91,9 +144,20 @@ export function App() {
     if (sessionId) localStorage.setItem(SESSION_KEY, sessionId);
     else {
       localStorage.removeItem(SESSION_KEY);
+      viewedSessionIdRef.current = null;
+      setLiveTimelineBatches([]);
       setPage((current) => (current === "report" ? "monitor" : current));
     }
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || controllerSessionIdRef.current !== sessionId || observations.length === 0) {
+      return;
+    }
+    const controller = controllerRef.current;
+    if (!controller) return;
+    controller.acknowledgeObserved(new Set(observations.map((observation) => observation.id)));
+  }, [observations, sessionId]);
 
   // Once the session is no longer active, the optimistic stop has landed.
   useEffect(() => {
@@ -104,10 +168,26 @@ export function App() {
   const beginMonitoring = useCallback(async (id: string) => {
     const bridge = getBridge();
     if (!bridge) return;
+    setReportStartCountdown(null);
+    viewedSessionIdRef.current = id;
+    controllerSessionIdRef.current = id;
+    setLiveTimelineBatches([]);
     setPage("monitor");
     setMonitoringStatus({ phase: "idle", bufferCount: 0 });
     setCaptureState("idle");
-    const controller = new MonitoringController(id, undefined, undefined, setMonitoringStatus);
+    let controller: MonitoringController | null = null;
+    const handleLiveBatches = (batches: LiveTimelineBatch[]) => {
+      if (controllerRef.current === controller && viewedSessionIdRef.current === id) {
+        setLiveTimelineBatches(batches);
+      }
+    };
+    controller = new MonitoringController(
+      id,
+      undefined,
+      undefined,
+      setMonitoringStatus,
+      handleLiveBatches,
+    );
     controllerRef.current = controller;
     controller.start();
     // Replace any prior dwell subscription so old (stopped) controllers don't
@@ -124,36 +204,72 @@ export function App() {
       captureIdleTimerRef.current = window.setTimeout(() => setCaptureState("idle"), 650);
     });
     await bridge.startCapture();
+    setLocalMonitoringSessionId(id);
+  }, []);
+
+  const clearReportStartCountdown = useCallback((id: string) => {
+    setReportStartCountdown((current) => (current?.sessionId === id ? null : current));
   }, []);
 
   const startFocus = useCallback(async () => {
     const bridge = getBridge();
     if (!bridge) return;
+    if (startingMonitoring) return;
     // Stay compact: starting drops into a live monitoring state in the bar.
     setStopping(false);
+    setReportStartCountdown(null);
     // Resume the current session if one exists; otherwise open a new session.
     const resumeId = sessionId;
-    setBusy(resumeId ? "Resuming session…" : "Starting focus session…");
+    setStartingMonitoring(resumeId ? "resuming" : "starting");
     try {
       let id = resumeId;
       if (id) {
-        await callables.resumeSession({ sessionId: id });
+        await beginMonitoring(id);
+        callables.resumeSession({ sessionId: id }).catch((err) => {
+          console.error("resume session failed", err);
+          if (controllerSessionIdRef.current !== id) return;
+
+          dwellUnsubRef.current?.();
+          dwellUnsubRef.current = null;
+          captureStateUnsubRef.current?.();
+          captureStateUnsubRef.current = null;
+          if (captureIdleTimerRef.current) clearTimeout(captureIdleTimerRef.current);
+
+          const controller = controllerRef.current;
+          controllerRef.current = null;
+          controllerSessionIdRef.current = null;
+          setLocalMonitoringSessionId(null);
+          setCaptureState("idle");
+          setMonitoringStatus({ phase: "idle", bufferCount: 0 });
+
+          void bridge.stopCapture().catch((stopErr) => {
+            console.error("stop capture after resume failure failed", stopErr);
+          });
+          void controller?.stop().catch((stopErr) => {
+            console.error("stop controller after resume failure failed", stopErr);
+          });
+        });
       } else {
         const { data } = await callables.startSession({ title: "Focus session" });
         id = data.sessionId;
         setSessionId(id);
+        await beginMonitoring(id);
       }
-      await beginMonitoring(id);
+    } catch (err) {
+      console.error("start monitoring failed", err);
+      setLocalMonitoringSessionId(null);
     } finally {
-      setBusy(null);
+      setStartingMonitoring(null);
     }
-  }, [sessionId, beginMonitoring]);
+  }, [sessionId, beginMonitoring, startingMonitoring]);
 
   const stopFocus = useCallback(() => {
     const bridge = getBridge();
     const id = sessionId;
     // Flip the UI to stopped immediately; never block on the network.
     setStopping(true);
+    setStartingMonitoring(null);
+    setLocalMonitoringSessionId(null);
     // Detach capture + the dwell listener right away so nothing new buffers.
     dwellUnsubRef.current?.();
     dwellUnsubRef.current = null;
@@ -164,22 +280,32 @@ export function App() {
     setMonitoringStatus({ phase: "idle", bufferCount: 0 });
     const controller = controllerRef.current;
     controllerRef.current = null;
+    controllerSessionIdRef.current = null;
     // Flush remaining dwells, mark the session stopped, and kick off the report
     // — all in the background. The UI reflects status via the session listener.
     void (async () => {
       try {
         if (bridge) await bridge.stopCapture();
-        if (id) await callables.stopSession({ sessionId: id });
         if (controller) await controller.stop();
+        if (id) {
+          setReportStartCountdown({
+            sessionId: id,
+            targetAt: Date.now() + REPORT_START_COUNTDOWN_MS,
+          });
+        }
+        if (id) await callables.stopSession({ sessionId: id });
         if (id) await callables.generateReport({ sessionId: id, timeZone: userTimeZone() });
       } catch (err) {
         console.error("stop/flush/report failed", err);
+      } finally {
+        if (id) clearReportStartCountdown(id);
       }
     })();
-  }, [sessionId]);
+  }, [clearReportStartCountdown, sessionId]);
 
   const loadDemo = useCallback(async () => {
     setBusy("Loading demo session…");
+    setLiveTimelineBatches([]);
     try {
       const { data } = await callables.seedDemoSession({});
       setSessionId(data.sessionId);
@@ -188,26 +314,9 @@ export function App() {
     }
   }, []);
 
+  // "New" should only clear the current workspace and stop any active capture.
+  // Starting the next capture stays behind the explicit Start monitoring button.
   const newSession = useCallback(async () => {
-    dwellUnsubRef.current?.();
-    dwellUnsubRef.current = null;
-    captureStateUnsubRef.current?.();
-    captureStateUnsubRef.current = null;
-    if (captureIdleTimerRef.current) clearTimeout(captureIdleTimerRef.current);
-    setCaptureState("idle");
-    setMonitoringStatus({ phase: "idle", bufferCount: 0 });
-    setSessionId(null);
-    setPage("monitor");
-    const bridge = getBridge();
-    if (bridge) {
-      await bridge.setWindowMode("compact");
-      setExpanded(false);
-    }
-  }, []);
-
-  // "+ New" in the launcher: stop any current capture and clear the selected
-  // session. Starting the next capture stays behind the explicit Start button.
-  const startFreshSession = useCallback(async () => {
     const bridge = getBridge();
     const previousSessionId = sessionId;
     const shouldStopPreviousSession = session?.status === "active";
@@ -218,10 +327,16 @@ export function App() {
     if (captureIdleTimerRef.current) clearTimeout(captureIdleTimerRef.current);
     setCaptureState("idle");
     setMonitoringStatus({ phase: "idle", bufferCount: 0 });
+    setLiveTimelineBatches([]);
+    viewedSessionIdRef.current = null;
     const prev = controllerRef.current;
     controllerRef.current = null;
+    controllerSessionIdRef.current = null;
+    setLocalMonitoringSessionId(null);
     localStorage.removeItem(SESSION_KEY);
     setStopping(false);
+    setStartingMonitoring(null);
+    setReportStartCountdown(null);
     setSessionId(null);
     setPage("monitor");
 
@@ -240,6 +355,39 @@ export function App() {
       }
     })();
   }, [session?.status, sessionId]);
+
+  const deleteSession = useCallback(
+    async (id: string) => {
+      const deletingCurrentSession = id === sessionId;
+      if (deletingCurrentSession) {
+        const bridge = getBridge();
+        dwellUnsubRef.current?.();
+        dwellUnsubRef.current = null;
+        captureStateUnsubRef.current?.();
+        captureStateUnsubRef.current = null;
+        if (captureIdleTimerRef.current) clearTimeout(captureIdleTimerRef.current);
+        setCaptureState("idle");
+        setMonitoringStatus({ phase: "idle", bufferCount: 0 });
+        setLiveTimelineBatches([]);
+        viewedSessionIdRef.current = null;
+        const controller = controllerRef.current;
+        controller?.discard();
+        controllerRef.current = null;
+        controllerSessionIdRef.current = null;
+        setLocalMonitoringSessionId(null);
+        setStopping(false);
+        setStartingMonitoring(null);
+        setReportStartCountdown(null);
+        setSessionId(null);
+        setPage("monitor");
+        localStorage.removeItem(SESSION_KEY);
+        if (bridge) await bridge.stopCapture();
+      }
+
+      await callables.deleteSession({ sessionId: id });
+    },
+    [sessionId],
+  );
 
   const openDashboard = useCallback(() => {
     const bridge = getBridge();
@@ -273,34 +421,68 @@ export function App() {
   // reflected by the session's "reporting" status and the report listener.
   const generateReport = useCallback(() => {
     if (!sessionId) return;
+    setReportStartCountdown({
+      sessionId,
+      targetAt: Date.now() + REPORT_START_COUNTDOWN_MS,
+    });
     void callables
       .generateReport({ sessionId, timeZone: userTimeZone() })
-      .catch((err) => console.error("report generation failed", err));
-  }, [sessionId]);
+      .catch((err) => {
+        console.error("report generation failed", err);
+      })
+      .finally(() => clearReportStartCountdown(sessionId));
+  }, [clearReportStartCountdown, sessionId]);
 
   if (!ready) {
     return <div className="boot">Connecting to Focus…</div>;
   }
 
-  const stopped = session?.status === "stopped" || session?.status === "reporting";
+  const stopped =
+    !startingMonitoring &&
+    (session?.status === "stopped" || session?.status === "reporting" || reportStartQueued);
   const canChat = Boolean(session) && (stopped || Boolean(session?.isDemo));
   const canGenerateReport = Boolean(session) && (stopped || Boolean(session?.isDemo));
+  const activelyMonitoring = localMonitoringSessionId === sessionId;
+  const showInitialReportSummaryStatus = Boolean(
+    session && !report && !session.reportId && (reporting || reportStartQueued),
+  );
+  const hasCurrentSessionReport = Boolean(session && (report || session.reportId));
+  const currentSessionReportSummary =
+    session && showInitialReportSummaryStatus ? (
+      <ReportStatusCard
+        session={session}
+        report={report}
+        reporting={reporting}
+        reportCountdownLabel={reportStartCountdownLabel}
+        canGenerate={canGenerateReport}
+        onOpen={() => setPage("report")}
+        onGenerate={generateReport}
+      />
+    ) : session && hasCurrentSessionReport ? (
+      <ReportSection
+        loading={!report && Boolean(session.reportId)}
+        report={report}
+        countdownLabel={reportStartCountdownLabel}
+        onOpen={() => setPage("report")}
+      />
+    ) : undefined;
   const monitoringLabel = monitoringLabelFor({
     captureState,
     monitoringStatus,
-    sessionUpdateInFlight: Boolean(session?.updateInFlight),
+    sessionUpdateInFlight: Boolean(activelyMonitoring && session?.updateInFlight),
     stopping,
   });
   const liveMonitoringPhase = liveMonitoringPhaseFor({
     captureState,
     monitoringStatus,
-    sessionUpdateInFlight: Boolean(session?.updateInFlight),
+    sessionUpdateInFlight: Boolean(activelyMonitoring && session?.updateInFlight),
     stopping,
   });
 
   // Desktop: the compact launcher bar is the persistent header in both states.
   if (desktop) {
-    const monitoring = session?.status === "active" && !stopping;
+    const monitoring =
+      activelyMonitoring && !stopping && !reportStartQueued && !startingMonitoring;
     const showInboxPage = page === "inbox";
     const showReportPage = Boolean(session && page === "report");
     const showChatDock = Boolean(session && page === "monitor");
@@ -311,10 +493,11 @@ export function App() {
         monitoring={monitoring}
         label={monitoringLabel}
         phase={liveMonitoringPhase}
+        startingLabel={startingLabel}
         expanded={expanded}
         onStart={startFocus}
         onStop={stopFocus}
-        onNew={startFreshSession}
+        onNew={newSession}
         onOpenInbox={openInbox}
         inboxActive={page === "inbox"}
         inboxCount={savedWorkflows.length}
@@ -343,6 +526,7 @@ export function App() {
                 sessions={sessions}
                 activeId={sessionId}
                 onSelect={selectSession}
+                onDelete={deleteSession}
                 overlay
               />
             </div>
@@ -358,13 +542,20 @@ export function App() {
           {showInboxPage ? (
             <AutomationInbox items={savedWorkflows} onBack={() => setPage("monitor")} />
           ) : !session ? (
-            <Welcome desktop={desktop} onLoadDemo={loadDemo} busy={busy} />
+            <Welcome
+              desktop={desktop}
+              onStart={startFocus}
+              onLoadDemo={loadDemo}
+              busy={busy}
+              startingLabel={startingLabel}
+            />
           ) : page === "report" ? (
             <ReportPage
               observations={observations}
               session={session}
               report={report}
               reporting={reporting}
+              reportCountdownLabel={reportStartCountdownLabel}
               canGenerate={canGenerateReport}
               onBack={() => setPage("monitor")}
               onGenerate={generateReport}
@@ -372,21 +563,25 @@ export function App() {
           ) : (
             <main className="layout">
               <section className="col-main">
-                <AgentAwareness
-                  session={session}
+                {currentSessionReportSummary && (
+                  <div className="session-report-section">
+                    <div className="current-session-label">Session Report</div>
+                    {currentSessionReportSummary}
+                  </div>
+                )}
+                <div className="current-session-section">
+                  <div className="current-session-label">Current Session</div>
+                  <AgentAwareness
+                    session={session}
+                    observations={observations}
+                  />
+                </div>
+                <Timeline
+                  sessionId={sessionId}
                   observations={observations}
-                  reportSummary={
-                    <ReportStatusCard
-                      session={session}
-                      report={report}
-                      reporting={reporting}
-                      canGenerate={canGenerateReport}
-                      onOpen={() => setPage("report")}
-                      onGenerate={generateReport}
-                    />
-                  }
+                  liveBatches={liveTimelineBatches}
+                  usage={session.usage}
                 />
-                <Timeline sessionId={sessionId} observations={observations} usage={session.usage} />
               </section>
             </main>
           )}
@@ -398,6 +593,8 @@ export function App() {
               messages={chat}
               enabled={canChat}
               onHeightChange={setChatDockHeight}
+              collapsed={desktopChatCollapsed}
+              onCollapsedChange={setDesktopChatCollapsed}
             />
           </div>
         )}
@@ -414,6 +611,7 @@ export function App() {
             desktop={desktop}
             session={session}
             busy={busy}
+            startingLabel={startingLabel}
             onStart={startFocus}
             onStop={stopFocus}
             onLoadDemo={loadDemo}
@@ -422,6 +620,7 @@ export function App() {
             onOpenInbox={openInbox}
             inboxActive={page === "inbox"}
             inboxCount={savedWorkflows.length}
+            reportCountdownLabel={reportStartCountdownLabel}
           />
         </div>
       </header>
@@ -430,18 +629,30 @@ export function App() {
       {session?.lastError && <div className="busy-banner error-banner">{session.lastError}</div>}
 
       {page !== "inbox" && page !== "report" && (
-        <SessionList sessions={sessions} activeId={sessionId} onSelect={selectSession} />
+        <SessionList
+          sessions={sessions}
+          activeId={sessionId}
+          onSelect={selectSession}
+          onDelete={deleteSession}
+        />
       )}
       {page === "inbox" ? (
         <AutomationInbox items={savedWorkflows} onBack={() => setPage("monitor")} />
       ) : !session ? (
-        <Welcome desktop={desktop} onLoadDemo={loadDemo} busy={busy} />
+        <Welcome
+          desktop={desktop}
+          onStart={startFocus}
+          onLoadDemo={loadDemo}
+          busy={busy}
+          startingLabel={startingLabel}
+        />
       ) : page === "report" ? (
         <ReportPage
           observations={observations}
           session={session}
           report={report}
           reporting={reporting}
+          reportCountdownLabel={reportStartCountdownLabel}
           canGenerate={canGenerateReport}
           onBack={() => setPage("monitor")}
           onGenerate={generateReport}
@@ -449,21 +660,25 @@ export function App() {
       ) : (
         <main className="layout">
           <section className="col-main">
-            <AgentAwareness
-              session={session}
+            {currentSessionReportSummary && (
+              <div className="session-report-section">
+                <div className="current-session-label">Session Report</div>
+                {currentSessionReportSummary}
+              </div>
+            )}
+            <div className="current-session-section">
+              <div className="current-session-label">Current Session</div>
+              <AgentAwareness
+                session={session}
+                observations={observations}
+              />
+            </div>
+            <Timeline
+              sessionId={sessionId}
               observations={observations}
-              reportSummary={
-                <ReportStatusCard
-                  session={session}
-                  report={report}
-                  reporting={reporting}
-                  canGenerate={canGenerateReport}
-                  onOpen={() => setPage("report")}
-                  onGenerate={generateReport}
-                />
-              }
+              liveBatches={liveTimelineBatches}
+              usage={session.usage}
             />
-            <Timeline sessionId={sessionId} observations={observations} usage={session.usage} />
           </section>
           <section className="col-side">
             <Chat sessionId={sessionId!} messages={chat} enabled={canChat} />
@@ -474,10 +689,61 @@ export function App() {
   );
 }
 
+function ReportSection({
+  loading,
+  report,
+  countdownLabel,
+  onOpen,
+}: {
+  loading: boolean;
+  report: Report | null;
+  countdownLabel: string | null;
+  onOpen: () => void;
+}) {
+  const timestampLabel = reportTimestampLabel(report);
+  const detailItems = reportDetailItems(report);
+  const showCountdown = Boolean(countdownLabel);
+
+  return (
+    <section
+      className="report-open-section"
+      aria-label="Session Report"
+      aria-live={showCountdown ? "polite" : undefined}
+    >
+      <div className="report-open-copy">
+        {loading ? (
+          <div className="report-open-details">Loading report details</div>
+        ) : detailItems.length > 0 ? (
+          <div className="report-open-details">
+            {detailItems.map((item) => (
+              <span className="report-open-stat" key={item.label}>
+                <strong>{item.value}</strong>
+                <span>{item.label}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="report-open-side">
+        {showCountdown && <span className="report-open-countdown">{countdownLabel}</span>}
+        <div className="report-open-action-row">
+          <span className="report-open-meta">
+            {timestampLabel ?? (loading ? "Loading saved report" : "Report available")}
+          </span>
+          <Button className="report-open-action" size="sm" onClick={onOpen} disabled={loading}>
+            View Report
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ReportStatusCard({
   session,
   report,
   reporting,
+  reportCountdownLabel,
   canGenerate,
   onOpen,
   onGenerate,
@@ -485,66 +751,75 @@ function ReportStatusCard({
   session: Session;
   report: Report | null;
   reporting: boolean;
+  reportCountdownLabel: string | null;
   canGenerate: boolean;
   onOpen: () => void;
   onGenerate: () => void;
 }) {
   const hasLoadedReport = Boolean(report);
   const hasReportRecord = Boolean(report || session.reportId);
-  const statusLabel = reporting
-    ? hasReportRecord
-      ? "Updating"
-      : "Generating"
+  const reportCountdownActive = Boolean(reportCountdownLabel);
+  const reportUpdateCountdown = reportCountdownActive && hasReportRecord;
+  const reportQueued = reportCountdownActive && !reporting && !hasReportRecord;
+  const reportLive = reporting || reportCountdownActive;
+  const reportState = reportLive
+    ? "live"
     : hasLoadedReport
-      ? "Ready"
+      ? "ready"
       : session.reportId
-        ? "Loading"
-        : "Not created";
-  const description = reporting
-    ? hasReportRecord
-      ? hasLoadedReport
-        ? "The agent is amending this session report. You can keep reviewing the current version."
-        : "The agent is amending this session report. The current version is loading."
-      : "The agent is reviewing the attention timeline and writing the report."
-    : hasLoadedReport
-      ? report!.updatedAt
-        ? `Updated ${new Date(report!.updatedAt).toLocaleString([], reportDateFormat)}`
-        : `Created ${new Date(report!.createdAt).toLocaleString([], reportDateFormat)}`
-      : session.reportId
-        ? "Loading the saved report for this session."
-        : session.status === "active"
-          ? "Stop monitoring to generate a report for this session."
-          : "Generate a report when you want a written summary of this session.";
+        ? "loading"
+        : "idle";
+  const statusLabel = reportUpdateCountdown
+    ? "Updating"
+    : reportQueued
+      ? "Queued"
+      : reporting
+        ? hasReportRecord
+          ? "Updating"
+          : "Generating"
+        : hasLoadedReport
+          ? "Ready"
+          : session.reportId
+            ? "Loading"
+            : "Not created";
+  const description = reportUpdateCountdown
+    ? reporting
+      ? "The current version stays available while the agent updates it."
+      : "The current version stays available while final observations save."
+    : reportQueued
+      ? "Final observations are being saved before the summary starts."
+      : reporting
+        ? hasReportRecord
+          ? hasLoadedReport
+            ? "The agent is updating this session summary. You can keep reviewing the current version."
+            : "The agent is updating this session summary. The current version is loading."
+          : "The agent is reviewing the attention timeline and writing the summary."
+        : hasLoadedReport
+          ? report!.updatedAt
+            ? `Updated ${new Date(report!.updatedAt).toLocaleString([], reportDateFormat)}`
+            : `Created ${new Date(report!.createdAt).toLocaleString([], reportDateFormat)}`
+          : session.reportId
+            ? "Loading the saved summary for this session."
+            : session.status === "active"
+              ? "Stop monitoring to generate a summary for this session."
+              : "Generate a written summary of this session.";
 
   return (
-    <div className="report-nav" aria-live={reporting ? "polite" : undefined}>
+    <div className="report-nav" aria-live={reportLive ? "polite" : undefined}>
       <div className="report-nav-row">
         <div className="report-nav-head">
-          <span
-            className="report-nav-dot"
-            data-state={
-              reporting ? "live" : hasLoadedReport ? "ready" : session.reportId ? "loading" : "idle"
-            }
-          >
-            {reporting && <span className="report-spinner" aria-hidden />}
+          <span className="report-nav-dot" data-state={reportState}>
+            {reportLive && <span className="report-spinner" aria-hidden />}
           </span>
           <div className="report-nav-copy">
             <div className="report-nav-title-row">
-              <div className="report-nav-title">Session report</div>
-              <div
-                className="report-nav-status"
-                data-state={
-                  reporting
-                    ? "live"
-                    : hasLoadedReport
-                      ? "ready"
-                      : session.reportId
-                        ? "loading"
-                        : "idle"
-                }
-              >
+              <div className="report-nav-title">Status</div>
+              <div className="report-nav-status" data-state={reportState}>
                 {statusLabel}
               </div>
+              {reportCountdownActive && reportCountdownLabel && (
+                <div className="report-nav-countdown">{reportCountdownLabel}</div>
+              )}
             </div>
             <p>{description}</p>
           </div>
@@ -552,12 +827,12 @@ function ReportStatusCard({
         <div className="report-nav-actions">
           {hasLoadedReport && (
             <Button className="report-nav-cta" size="sm" onClick={onOpen}>
-              Open Report
+              View Report
             </Button>
           )}
-          {!hasReportRecord && canGenerate && !reporting && (
+          {!hasReportRecord && canGenerate && !reportLive && (
             <Button className="report-nav-cta" size="sm" onClick={onGenerate}>
-              Generate report
+              Generate summary
             </Button>
           )}
         </div>
@@ -573,11 +848,28 @@ const reportDateFormat: Intl.DateTimeFormatOptions = {
   minute: "2-digit",
 };
 
+function reportTimestampLabel(report: Report | null): string | null {
+  if (!report) return null;
+  const timestamp = report.updatedAt ?? report.createdAt;
+  const prefix = report.updatedAt ? "Updated" : "Created";
+  return `${prefix} ${new Date(timestamp).toLocaleString([], reportDateFormat)}`;
+}
+
+function reportDetailItems(report: Report | null): Array<{ label: string; value: number }> {
+  if (!report) return [];
+  return [
+    { label: "Focus areas", value: report.focusAreas.length },
+    { label: "Workflows", value: report.workflows.length },
+    { label: "Moments", value: report.significantScreenshots.length },
+  ].filter((item) => item.value > 0);
+}
+
 function ReportPage({
   observations,
   session,
   report,
   reporting,
+  reportCountdownLabel,
   canGenerate,
   onBack,
   onGenerate,
@@ -586,6 +878,7 @@ function ReportPage({
   session: Session;
   report: Report | null;
   reporting: boolean;
+  reportCountdownLabel: string | null;
   canGenerate: boolean;
   onBack: () => void;
   onGenerate: () => void;
@@ -605,7 +898,7 @@ function ReportPage({
           <ArrowLeft aria-hidden />
         </Button>
         <div className="secondary-page-title">
-          <h1>Session Report</h1>
+          <h1>Session Summary</h1>
         </div>
       </header>
 
@@ -614,29 +907,33 @@ function ReportPage({
           <h2>{reportTitle}</h2>
         </div>
 
-        {reporting && (
+        {(reporting || reportCountdownLabel) && (
           <ReportPendingCard
+            queued={Boolean(reportCountdownLabel && !reporting)}
             updating={Boolean(session.reportId)}
             hasReport={Boolean(report || session.reportId)}
+            countdownLabel={reportCountdownLabel}
           />
         )}
         {report ? (
           <ReportView observations={observations} report={report} />
         ) : (
           <div className="report-empty">
-            <strong>No report yet</strong>
+            <strong>No summary yet</strong>
             <p className="muted">
-              {reporting
-                ? "The agent is writing this session report. It will appear here as soon as it is ready."
-                : session.reportId
-                  ? "Loading the saved report for this session."
-                  : session.status === "active"
-                    ? "Stop monitoring before generating a written report."
-                    : "Generate a report to create a written summary of this session."}
+              {reportCountdownLabel && !reporting
+                ? `${reportCountdownLabel}. Final observations are being saved first.`
+                : reporting
+                  ? "The agent is writing this session summary. It will appear here as soon as it is ready."
+                  : session.reportId
+                    ? "Loading the saved summary for this session."
+                    : session.status === "active"
+                      ? "Stop monitoring before generating a written summary."
+                      : "Generate a written summary of this session."}
             </p>
-            {canGenerate && !reporting && !session.reportId && (
+            {canGenerate && !reporting && !reportCountdownLabel && !session.reportId && (
               <Button size="sm" onClick={onGenerate}>
-                Generate report
+                Generate summary
               </Button>
             )}
           </div>
@@ -646,20 +943,56 @@ function ReportPage({
   );
 }
 
-function ReportPendingCard({ updating, hasReport }: { updating: boolean; hasReport: boolean }) {
+function ReportPendingCard({
+  queued,
+  updating,
+  hasReport,
+  countdownLabel,
+}: {
+  queued: boolean;
+  updating: boolean;
+  hasReport: boolean;
+  countdownLabel: string | null;
+}) {
+  const title = queued
+    ? updating
+      ? "Summary update queued"
+      : "Session summary queued"
+    : updating
+      ? "Updating your session summary"
+      : "Writing your session summary";
+  const body = queued
+    ? hasReport
+      ? `${countdownLabel}. The current version remains available.`
+      : `${countdownLabel}. The agent will start after the final capture flush.`
+    : countdownLabel && updating
+      ? `${countdownLabel}. The current version remains available.`
+    : hasReport
+      ? "The current version remains available while the agent amends it."
+      : "The agent is reviewing this session's attention timeline. This usually takes a few moments.";
+
   return (
     <div className="report-pending" aria-live="polite">
       <span className="report-spinner" aria-hidden />
       <div>
-        <strong>{updating ? "Updating your session report" : "Writing your session report"}</strong>
-        <p className="muted">
-          {hasReport
-            ? "The current version remains available while the agent amends it."
-            : "The agent is reviewing this session’s attention timeline. This usually takes a few moments."}
-        </p>
+        <strong>{title}</strong>
+        <p className="muted">{body}</p>
       </div>
     </div>
   );
+}
+
+function formatReportStartCountdown(seconds: number | null, updating = false): string | null {
+  if (seconds === null) return null;
+  const label = updating ? "Update" : "Summary";
+  if (seconds <= 0) return `${label} starting...`;
+  return `${label} starts in ${formatCountdown(seconds)}`;
+}
+
+function formatCountdown(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function userTimeZone(): string | undefined {
@@ -709,6 +1042,7 @@ function Launcher({
   monitoring,
   label,
   phase,
+  startingLabel,
   expanded,
   onStart,
   onStop,
@@ -722,6 +1056,7 @@ function Launcher({
   monitoring: boolean;
   label: string;
   phase: LiveMonitoringPhase;
+  startingLabel: string | null;
   expanded: boolean;
   onStart: () => void;
   onStop: () => void;
@@ -732,10 +1067,16 @@ function Launcher({
   onToggleExpand: () => void;
 }) {
   const disabled = Boolean(busy);
+  const startPending = Boolean(startingLabel);
 
   return (
-    <div className={expanded ? "launcher-bar lb-header" : "launcher-bar"}>
-      <button className="lb-btn lb-ghost" onClick={onNew} disabled={disabled} title="New session">
+    <div className={expanded ? "launcher-bar lb-header" : "launcher-bar lb-collapsed"}>
+      <button
+        className="lb-btn lb-ghost"
+        onClick={onNew}
+        disabled={disabled || startPending}
+        title="New session"
+      >
         <PlusIcon />
         <span>New</span>
       </button>
@@ -754,6 +1095,11 @@ function Launcher({
               <span>Stop</span>
             </button>
           </div>
+        ) : startingLabel ? (
+          <div className="lb-starting" aria-live="polite">
+            <span className="lb-starting-mark" aria-hidden />
+            <span className="lb-starting-label">{startingLabel}</span>
+          </div>
         ) : (
           <button className="lb-start" onClick={onStart} disabled={disabled}>
             <span className="lb-play-mark" aria-hidden>
@@ -769,8 +1115,8 @@ function Launcher({
           className={`lb-icon${inboxActive ? " is-active" : ""}`}
           onClick={onOpenInbox}
           disabled={disabled}
-          title="Automation Inbox"
-          aria-label="Automation Inbox"
+          title="Workflow Inbox"
+          aria-label="Workflow Inbox"
         >
           <InboxIcon />
           {inboxCount > 0 && <span className="lb-count">{inboxCount}</span>}
@@ -897,22 +1243,41 @@ function ResizeHandles() {
 
 function Welcome({
   desktop,
+  onStart,
   onLoadDemo,
   busy,
+  startingLabel,
 }: {
   desktop: boolean;
+  onStart: () => void;
   onLoadDemo: () => void;
   busy: string | null;
+  startingLabel: string | null;
 }) {
   const copy =
-    "Focus watches brief cursor pauses, captures context, and gradually builds a hypothesis of what you are doing. After a session, you can chat about the workflows it found and what to automate later.";
+    "Focus watches brief cursor pauses, captures context, and helps you spot new workflow patterns emerging in your day. After a session, you can review what it found, chat about patterns, and decide what is worth automating and handing off to Claude or an agent to build.";
+  const starting = Boolean(startingLabel);
+  const startText = startingLabel ?? "Start Monitoring";
 
   if (desktop) {
     return (
       <div className="welcome welcome-desktop">
         <div className="welcome-hero">
-          <h2>Find opportunities to automate your workflows</h2>
+          <h2>
+            <span>Discover New</span>
+            <span className="welcome-title-accent">Workflow And Automation Opportunities</span>
+          </h2>
           <p>{copy}</p>
+          <div className="welcome-actions">
+            <Button
+              className="welcome-start-action"
+              size="lg"
+              onClick={onStart}
+              disabled={Boolean(busy) || starting}
+            >
+              {startText}
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -920,11 +1285,27 @@ function Welcome({
 
   return (
     <div className="welcome">
-      <h2>Find opportunities to automate your workflows</h2>
+      <h2>
+        <span>Discover New</span>
+        <span className="welcome-title-accent">Workflow And Automation Opportunities</span>
+      </h2>
       <p>{copy}</p>
-      <Button size="lg" onClick={onLoadDemo} disabled={Boolean(busy)}>
-        Load a demo session
-      </Button>
+      <div className="welcome-actions">
+        {desktop ? (
+          <Button
+            className="welcome-start-action"
+            size="lg"
+            onClick={onStart}
+            disabled={Boolean(busy) || starting}
+          >
+            {startText}
+          </Button>
+        ) : (
+          <Button size="lg" onClick={onLoadDemo} disabled={Boolean(busy)}>
+            Load a demo session
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
