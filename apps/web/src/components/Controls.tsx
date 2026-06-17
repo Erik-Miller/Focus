@@ -6,6 +6,7 @@ interface Props {
   desktop: boolean;
   session: Session | null;
   busy: string | null;
+  startingLabel: string | null;
   onStart: () => void;
   onStop: () => void;
   onLoadDemo: () => void;
@@ -14,12 +15,14 @@ interface Props {
   onOpenInbox: () => void;
   inboxActive: boolean;
   inboxCount: number;
+  reportCountdownLabel: string | null;
 }
 
 export function Controls({
   desktop,
   session,
   busy,
+  startingLabel,
   onStart,
   onStop,
   onLoadDemo,
@@ -28,18 +31,25 @@ export function Controls({
   onOpenInbox,
   inboxActive,
   inboxCount,
+  reportCountdownLabel,
 }: Props) {
   const disabled = Boolean(busy);
-  const active = session?.status === "active";
+  const starting = Boolean(startingLabel);
   const reporting = session?.status === "reporting";
-  const stopped = session?.status === "stopped" || reporting;
+  const reportQueued = Boolean(reportCountdownLabel && !reporting);
+  const active = session?.status === "active" && !reportQueued && !starting;
+  const stopped = !starting && (session?.status === "stopped" || reporting || reportQueued);
 
   return (
     <div className="controls">
       {desktop && !session && (
-        <Button onClick={onStart} disabled={disabled}>
-          ● Start Focus
-        </Button>
+        starting ? (
+          <span className="start-status">{startingLabel}</span>
+        ) : (
+          <Button onClick={onStart} disabled={disabled}>
+            ● Start Focus
+          </Button>
+        )
       )}
       {desktop && active && (
         <Button variant="secondary" onClick={onStop} disabled={disabled}>
@@ -48,12 +58,12 @@ export function Controls({
       )}
       {reporting && (
         <span className="report-status">
-          {session?.reportId ? "Amending report…" : "Generating report…"}
+          {session?.reportId ? "Updating summary..." : "Generating summary..."}
         </span>
       )}
-      {session && (stopped || session.isDemo) && !reporting && (
+      {session && (stopped || session.isDemo) && !reporting && !reportQueued && (
         <Button variant="secondary" onClick={onGenerateReport} disabled={disabled}>
-          {session.reportId ? "Amend report" : "Generate report"}
+          {session.reportId ? "Update summary" : "Generate summary"}
         </Button>
       )}
       {!session && !desktop && (
@@ -70,7 +80,7 @@ export function Controls({
         variant={inboxActive ? "secondary" : "ghost"}
         onClick={onOpenInbox}
         disabled={disabled}
-        title="Automation Inbox"
+        title="Workflow Inbox"
       >
         <Inbox />
         Inbox{inboxCount > 0 ? ` ${inboxCount}` : ""}

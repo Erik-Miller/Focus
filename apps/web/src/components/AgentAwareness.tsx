@@ -1,30 +1,21 @@
 import { useState, type ReactNode } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import {
-  directAddressText,
-  directAddressWorkflow,
-  type Observation,
-  type Session,
-} from "@focus/shared";
+import { directAddressText, type Observation, type Session } from "@focus/shared";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { WorkflowCard } from "./WorkflowCard";
 
 interface Props {
   session: Session;
   observations: Observation[];
-  reportSummary?: ReactNode;
 }
 
-export function AgentAwareness({ session, observations, reportSummary }: Props) {
-  const [open, setOpen] = useState(true);
+export function AgentAwareness({ session, observations }: Props) {
+  const [open, setOpen] = useState(false);
   const latest = observations[observations.length - 1];
-  const confidencePct = Math.round((session.confidence ?? 0) * 100);
   const currentIntent = directAddressText(session.currentIntent || "Building an understanding…");
   const hypothesis = directAddressText(session.agentFiles?.["/hypothesis.md"] ?? "");
-  const workflows = (session.discoveredWorkflows ?? []).map(directAddressWorkflow);
-  const workflowsWithSteps = workflows.filter((w) => Boolean(w.stepsObserved?.length));
+  const currentIntentDetails = stripLeadingHeading(hypothesis, "Current Intent");
   const activity =
     session.agentActivity ||
     (session.updateInFlight ? "Agent is analyzing new activity." : latest?.summary || "");
@@ -33,135 +24,80 @@ export function AgentAwareness({ session, observations, reportSummary }: Props) 
   const hasDeepDetails =
     Boolean(hypothesis) ||
     Boolean(latest?.evidence?.length) ||
-    Boolean(latest?.alternatives?.length) ||
-    Boolean(workflowsWithSteps.length);
-  const hasDetails =
-    Boolean(activity) || Boolean(suggestedNextAction) || Boolean(workflows.length) || hasDeepDetails;
+    Boolean(latest?.alternatives?.length);
+  const hasDetails = Boolean(activity) || Boolean(suggestedNextAction) || hasDeepDetails;
 
   return (
     <Card className={`awareness gap-0 overflow-hidden py-0${open ? " is-open" : ""}`}>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="panel-head">
+        <div className="panel-head awareness-head">
           <div className="awareness-pill">
             <span className="dot" data-conf={confLevel(session.confidence)} />
             <span className="pill-intent">{currentIntent}</span>
-            <span className="pill-conf">{confidencePct}%</span>
           </div>
-          <span className={`chevron${open ? " is-open" : ""}`} aria-hidden>
-            <ChevronRight />
-          </span>
-        </CollapsibleTrigger>
+        </div>
 
-        {reportSummary && <div className="awareness-report">{reportSummary}</div>}
+        {hasDetails && (
+          <CollapsibleTrigger className="awareness-details-trigger">
+            <span>View Details</span>
+            <ChevronDown className="awareness-details-chevron" aria-hidden />
+          </CollapsibleTrigger>
+        )}
 
-        <CollapsibleContent>
+        <CollapsibleContent className="awareness-details-content">
           <div className="panel-body">
             {hasDetails && (
-              <details className="details-section subsection" open>
-                <summary>
-                  <ChevronRight className="summary-chevron" aria-hidden />
-                  <span>Details</span>
-                </summary>
-
+              <div className="awareness-accordion-group">
                 {activity && (
-                  <div
-                    className={`agent-activity${session.updateInFlight ? " is-live" : ""}`}
-                    aria-live="polite"
-                  >
-                    <span className="agent-activity-copy" key={activity}>
-                      {activityText}
-                    </span>
-                  </div>
-                )}
-
-                {suggestedNextAction && (
-                  <div className="subsection">
-                    <h4>Suggested next step</h4>
-                    <p>{suggestedNextAction}</p>
-                  </div>
-                )}
-
-                {workflows.length ? (
-                  <div className="subsection">
-                    <h4>Workflows</h4>
-                    <div className="workflows">
-                      {workflows.map((w, i) => (
-                        <div className="workflow-detail" key={`${w.name}-promoted-${i}`}>
-                          <WorkflowCard
-                            workflow={w}
-                            context={{
-                              label: "Focus observed this session intent",
-                              value: currentIntent,
-                              fallback: "(No session intent captured.)",
-                            }}
-                            source={{
-                              sessionId: session.id,
-                              title: currentIntent || session.title || "Untitled session",
-                            }}
-                            spotlight={w.automatable}
-                          />
-                          {w.frequency && (
-                            <p className="muted">{formatWorkflowFrequency(w.frequency)}</p>
-                          )}
-                        </div>
-                      ))}
+                  <AwarenessAccordionSection title="Current activity">
+                    <div
+                      className={`agent-activity${session.updateInFlight ? " is-live" : ""}`}
+                      aria-live="polite"
+                    >
+                      <span className="agent-activity-copy" key={activity}>
+                        {activityText}
+                      </span>
                     </div>
-                  </div>
+                  </AwarenessAccordionSection>
+                )}
+
+                {hypothesis && (
+                  <AwarenessAccordionSection title="Current Intent">
+                    <div className="md-block">
+                      <ReactMarkdown>{currentIntentDetails}</ReactMarkdown>
+                    </div>
+                  </AwarenessAccordionSection>
+                )}
+
+                {latest?.evidence?.length ? (
+                  <AwarenessAccordionSection title="Supporting evidence">
+                    <ul>
+                      {latest.evidence.map((e, i) => (
+                        <li key={i}>{directAddressText(e)}</li>
+                      ))}
+                    </ul>
+                  </AwarenessAccordionSection>
                 ) : null}
 
-                {hasDeepDetails && (
-                  <div className="analysis-section">
-                    {hypothesis && (
-                      <div className="md-block">
-                        <ReactMarkdown>{hypothesis}</ReactMarkdown>
-                      </div>
-                    )}
-
-                    {latest?.evidence?.length ? (
-                      <div className="analysis-section">
-                        <h5>Supporting evidence</h5>
-                        <ul>
-                          {latest.evidence.map((e, i) => (
-                            <li key={i}>{directAddressText(e)}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-
-                    {latest?.alternatives?.length ? (
-                      <div className="analysis-section">
-                        <h5>Alternative hypotheses</h5>
-                        <ul>
-                          {latest.alternatives.map((a, i) => (
-                            <li key={i}>
-                              {directAddressText(a.hypothesis)}{" "}
-                              <span className="muted">({Math.round(a.confidence * 100)}%)</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-
-                    {workflowsWithSteps.length ? (
-                      <div className="analysis-section">
-                        <h5>Workflow steps</h5>
-                        <div className="workflows">
-                          {workflowsWithSteps.map((w, i) => (
-                            <div className="workflow-detail" key={`${w.name}-steps-${i}`}>
-                              <h5>{w.name}</h5>
-                              <ol>
-                                {w.stepsObserved!.map((step, stepIndex) => (
-                                  <li key={stepIndex}>{step}</li>
-                                ))}
-                              </ol>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+                {suggestedNextAction && (
+                  <AwarenessAccordionSection title="Anticipated next step">
+                    <p>{suggestedNextAction}</p>
+                  </AwarenessAccordionSection>
                 )}
-              </details>
+
+                {latest?.alternatives?.length ? (
+                  <AwarenessAccordionSection title="Alternative hypotheses">
+                    <ul>
+                      {latest.alternatives.map((a, i) => (
+                        <li key={i}>
+                          <span>{directAddressText(a.hypothesis)}</span>
+                          <span className="hypothesis-confidence">{formatConfidence(a.confidence)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </AwarenessAccordionSection>
+                ) : null}
+              </div>
             )}
           </div>
         </CollapsibleContent>
@@ -170,15 +106,38 @@ export function AgentAwareness({ session, observations, reportSummary }: Props) 
   );
 }
 
+function AwarenessAccordionSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Collapsible className="awareness-accordion">
+      <CollapsibleTrigger className="awareness-accordion-trigger">
+        <span>{title}</span>
+        <ChevronDown className="awareness-accordion-chevron" aria-hidden />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="awareness-accordion-content">{children}</CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function stripLeadingHeading(markdown: string, heading: string): string {
+  const lines = markdown.trim().split(/\r?\n/);
+  const firstContentIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstContentIndex === -1) return markdown;
+
+  const firstLine = lines[firstContentIndex].trim().replace(/^#{1,6}\s*/, "");
+  if (firstLine.toLowerCase() !== heading.toLowerCase()) return markdown;
+
+  return [...lines.slice(0, firstContentIndex), ...lines.slice(firstContentIndex + 1)]
+    .join("\n")
+    .trim();
+}
+
+function formatConfidence(confidence: number): string {
+  if (!Number.isFinite(confidence)) return "";
+  return `${Math.round(confidence * 100)}%`;
+}
+
 function confLevel(c: number): string {
   if (c >= 0.75) return "high";
   if (c >= 0.4) return "mid";
   return "low";
-}
-
-function formatWorkflowFrequency(frequency: string): string {
-  const value = frequency.trim();
-  if (!value) return "";
-  if (value.toLowerCase() === "once") return "Observed once";
-  return `Observed ${value}`;
 }

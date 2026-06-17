@@ -13,6 +13,8 @@ export interface MonitoringConfig {
   pollIntervalMs: number;
   /** Edge length (px) of the square crop captured around the cursor. */
   captureSize: number;
+  /** Capture a full-screen context frame on every Nth emitted snapshot. */
+  fullScreenshotEverySnapshots: number;
   /** Minimum time between agent "understanding" updates during monitoring. */
   minUpdateIntervalMs: number;
   /** When context is stable, cadence grows toward this ceiling. */
@@ -31,6 +33,7 @@ export const DEFAULT_MONITORING_CONFIG: MonitoringConfig = {
   dwellRadiusPx: 6,
   pollIntervalMs: 16,
   captureSize: 250,
+  fullScreenshotEverySnapshots: 8,
   minUpdateIntervalMs: 20_000,
   idleBackoffMaxMs: 90_000,
   maxBatch: 8,

@@ -1,6 +1,7 @@
-import { createDeepAgent } from "deepagents";
+import { createDeepAgent, GENERAL_PURPOSE_SUBAGENT } from "deepagents";
 import { HumanMessage, type BaseMessage } from "@langchain/core/messages";
 import { awaitAllCallbacks } from "@langchain/core/callbacks/promises";
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import {
   understandingUpdateSchema,
   reportContentSchema,
@@ -66,7 +67,7 @@ export async function runMonitoring(
     input.priorWorkflows || "(empty)",
     "",
     `## New batch of ${input.observations.length} observed moment(s)`,
-    "For each, the active app/window, dwell time, and screenshots follow. Update your understanding and return the structured result.",
+    "For each, the active app/window, dwell time, and available screenshots follow. Update your understanding and return the structured result.",
   ].join("\n");
 
   const content: ContentPart[] = [{ type: "text", text: header }];
@@ -105,12 +106,26 @@ export interface ChatInput {
   observationsDigest: string;
   history: Pick<ChatMessage, "role" | "content">[];
   message: string;
+  tools?: StructuredToolInterface[];
   signal?: AbortSignal;
 }
 
 export async function runChat(input: ChatInput): Promise<{ answer: string; usage: TokenUsage }> {
   const model = buildModel("chat", input.apiKey);
-  const agent = createDeepAgent({ model, systemPrompt: CHAT_SYSTEM_PROMPT });
+  const tools = input.tools ?? [];
+  const agent = createDeepAgent({
+    model,
+    systemPrompt: CHAT_SYSTEM_PROMPT,
+    tools,
+    subagents: tools.length
+      ? [
+          {
+            ...GENERAL_PURPOSE_SUBAGENT,
+            tools: [],
+          },
+        ]
+      : undefined,
+  });
 
   const context = [
     "## Session knowledge",
@@ -170,7 +185,7 @@ export async function runReport(
   });
 
   const prompt = [
-    "Write the final session report from the following accumulated understanding.",
+    "Write the final session summary from the following accumulated understanding.",
     input.timeZone
       ? `Use the user's timezone (${input.timeZone}) for every timeline time. Do not convert those times to UTC.`
       : "Use the local times exactly as shown in the observed moments digest for every timeline time. Do not convert those times to UTC.",

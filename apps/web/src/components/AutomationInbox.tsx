@@ -108,7 +108,7 @@ export function AutomationInbox({ items, onBack }: { items: SavedWorkflow[]; onB
           <ArrowLeft aria-hidden />
         </Button>
         <div className="secondary-page-title">
-          <h1>Automation Inbox</h1>
+          <h1>Workflow Inbox</h1>
         </div>
         <Badge className="secondary-page-count" variant="secondary">
           {items.length}
@@ -181,7 +181,6 @@ function SavedWorkflowRow({
         </div>
         <div className="saved-workflow-head-actions">
           <div className="saved-workflow-badges">
-            {item.sourceReportId && <Badge variant="outline">report</Badge>}
             {item.lastLaunchedAt && <Badge variant="secondary">{lastLaunchLabel(item)}</Badge>}
           </div>
           <Button
@@ -247,7 +246,7 @@ function SavedWorkflowRow({
                 {buttonLabel({ busy, feedback, action: "desktop", fallback: "Claude Desktop" })}
               </span>
               <span className="action-label-short">
-                {buttonLabel({ busy, feedback, action: "desktop", fallback: "Claude" })}
+                {buttonLabel({ busy, feedback, action: "desktop", fallback: "Desktop" })}
               </span>
             </Button>
             <Button
@@ -260,7 +259,9 @@ function SavedWorkflowRow({
               title="Open Terminal and run Claude CLI"
             >
               <Terminal />
-              <span>{buttonLabel({ busy, feedback, action: "terminal", fallback: "Terminal" })}</span>
+              <span>
+                {buttonLabel({ busy, feedback, action: "terminal", fallback: "Claude Terminal" })}
+              </span>
             </Button>
           </>
         )}
@@ -295,7 +296,7 @@ function buttonLabel({
 }
 
 function lastLaunchLabel(item: SavedWorkflow): string {
-  const target = item.lastLaunchTarget === "terminal" ? "Terminal" : "Claude";
+  const target = item.lastLaunchTarget === "terminal" ? "Claude Terminal" : "Claude Desktop";
   return `${target} ${dateLabel(item.lastLaunchedAt!)}`;
 }
 

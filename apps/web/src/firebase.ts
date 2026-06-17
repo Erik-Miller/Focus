@@ -34,9 +34,21 @@ export const callables = {
   startSession: httpsCallable<{ title?: string }, { sessionId: string }>(functions, "startSession"),
   stopSession: httpsCallable<{ sessionId: string }, { ok: boolean }>(functions, "stopSession"),
   resumeSession: httpsCallable<{ sessionId: string }, { ok: boolean }>(functions, "resumeSession"),
+  deleteSession: httpsCallable<{ sessionId: string }, { ok: boolean }>(
+    functions,
+    "deleteSession",
+  ),
   processObservations: httpsCallable<
     { sessionId: string; observations: unknown[] },
-    { ok?: boolean; skipped?: boolean; currentIntent?: string; confidence?: number }
+    {
+      ok?: boolean;
+      skipped?: boolean;
+      interpreted?: boolean;
+      reason?: string;
+      persisted?: number;
+      currentIntent?: string;
+      confidence?: number;
+    }
   >(functions, "processObservations"),
   chatWithAgent: httpsCallable<
     { sessionId: string; runId: string; message: string },

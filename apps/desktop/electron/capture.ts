@@ -55,18 +55,17 @@ function toJpegDataUrl(img: NativeImage, quality = 60): string {
   return `data:image/jpeg;base64,${img.toJPEG(quality).toString("base64")}`;
 }
 
-export interface CapturedFrame {
-  fullDataUrl?: string;
+export interface CapturedCrop {
   cropDataUrl?: string;
   cropImage?: NativeImage;
 }
 
-/** Capture a downscaled full screen + a 250x250 crop centred on the cursor. */
-export async function captureFrame(
+/** Capture a square crop centred on the cursor. */
+export async function captureCursorCrop(
   cursor: { x: number; y: number },
   display: { x: number; y: number; width: number; height: number },
   captureSize: number,
-): Promise<CapturedFrame> {
+): Promise<CapturedCrop> {
   const half = Math.floor(captureSize / 2);
   const rx = Math.min(
     Math.max(cursor.x - half, display.x),
@@ -77,23 +76,23 @@ export async function captureFrame(
     display.y + display.height - captureSize,
   );
 
-  const [full, crop] = await Promise.all([
-    screencapture(["-x", "-C"]),
-    screencapture(["-x", `-R${rx},${ry},${captureSize},${captureSize}`]),
-  ]);
-
-  const result: CapturedFrame = {};
-  if (full) {
-    const size = full.getSize();
-    const targetWidth = Math.min(1024, size.width);
-    const resized = full.resize({ width: targetWidth });
-    result.fullDataUrl = toJpegDataUrl(resized);
-  }
+  const crop = await screencapture(["-x", `-R${rx},${ry},${captureSize},${captureSize}`]);
+  const result: CapturedCrop = {};
   if (crop) {
     result.cropImage = crop;
     result.cropDataUrl = toJpegDataUrl(crop, 70);
   }
   return result;
+}
+
+/** Capture a downscaled full-screen context frame. */
+export async function captureFullScreen(): Promise<string | undefined> {
+  const full = await screencapture(["-x", "-C"]);
+  if (!full) return undefined;
+  const size = full.getSize();
+  const targetWidth = Math.min(1024, size.width);
+  const resized = full.resize({ width: targetWidth });
+  return toJpegDataUrl(resized);
 }
 
 /** Perceptual difference hash (dHash) of an image, as a 64-bit binary string. */

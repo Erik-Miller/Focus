@@ -19,7 +19,14 @@ const MAX_TITLE_LENGTH = 240;
 
 export const saveWorkflowForLater = onCall(SAVED_WORKFLOW_OPTS, async (request) => {
   const uid = requireAuth(request);
-  const parsed = saveWorkflowForLaterInputSchema.safeParse(request.data);
+  return saveWorkflowForUser(uid, request.data);
+});
+
+export async function saveWorkflowForUser(
+  uid: string,
+  value: unknown,
+): Promise<{ id: string }> {
+  const parsed = saveWorkflowForLaterInputSchema.safeParse(value);
   if (!parsed.success) {
     throw new HttpsError("invalid-argument", "Valid saved workflow input required.");
   }
@@ -57,7 +64,7 @@ export const saveWorkflowForLater = onCall(SAVED_WORKFLOW_OPTS, async (request) 
   });
 
   return { id };
-});
+}
 
 export const deleteSavedWorkflow = onCall(SAVED_WORKFLOW_OPTS, async (request) => {
   const uid = requireAuth(request);

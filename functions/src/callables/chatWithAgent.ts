@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { directAddressText, type ChatMessage, type Observation } from "@focus/shared";
 import { runChat } from "../agent/runAgent.js";
+import { createSaveWorkflowTool } from "../agent/saveWorkflowTool.js";
 import {
   CALLABLE_OPTS,
   HYPOTHESIS_PATH,
@@ -66,7 +67,7 @@ async function updateChatRunStatus(
 }
 
 export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
-  requireAuth(request);
+  const uid = requireAuth(request);
   const sessionId = request.data?.sessionId as string;
   const message = (request.data?.message as string)?.trim();
   const runId = cleanRunId(request.data?.runId);
@@ -123,6 +124,20 @@ export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
     const controller = new AbortController();
     const stopWatchingCancel = watchChatRunCancel(runRef, controller);
     const apiKey = configureEnv();
+    const sourceTitle = session.currentIntent || session.title || "Focus session";
+    const saveWorkflowTool = createSaveWorkflowTool({
+      uid,
+      sourceSessionId: sessionId,
+      sourceReportId: session.reportId,
+      sourceTitle,
+      promptContext: {
+        label: "Focus observed this session intent",
+        value: session.currentIntent,
+        fallback: "(No session intent captured.)",
+      },
+      latestUserMessage: message,
+      validObservationIds: observations.map((observation) => observation.id),
+    });
     let result: Awaited<ReturnType<typeof runChat>>;
     try {
       result = await runChat({
@@ -132,6 +147,7 @@ export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
         observationsDigest: observationsDigest(observations),
         history,
         message,
+        tools: [saveWorkflowTool],
         signal: controller.signal,
       });
     } finally {
