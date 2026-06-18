@@ -1,9 +1,9 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import type { Session } from "@focus/shared";
 import { db, bucket, FieldValue } from "../firebaseApp.js";
-import { CALLABLE_OPTS, emptyUsageAggregate, requireAuth } from "./common.js";
+import { SESSION_CALLABLE_OPTS, emptyUsageAggregate, requireAuth } from "./common.js";
 
-export const startSession = onCall(CALLABLE_OPTS, async (request) => {
+export const startSession = onCall(SESSION_CALLABLE_OPTS, async (request) => {
   const uid = requireAuth(request);
   const title = (request.data?.title as string | undefined)?.slice(0, 120);
 
@@ -33,7 +33,7 @@ export const startSession = onCall(CALLABLE_OPTS, async (request) => {
   return { sessionId: ref.id };
 });
 
-export const stopSession = onCall(CALLABLE_OPTS, async (request) => {
+export const stopSession = onCall(SESSION_CALLABLE_OPTS, async (request) => {
   requireAuth(request);
   const sessionId = request.data?.sessionId as string;
   if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
@@ -41,13 +41,13 @@ export const stopSession = onCall(CALLABLE_OPTS, async (request) => {
   const ref = db.collection("sessions").doc(sessionId);
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "Session not found.");
-  await ref.update({ status: "stopped", endedAt: Date.now(), updateInFlight: false });
+  await ref.update({ status: "stopped", endedAt: Date.now() });
   return { ok: true };
 });
 
 // Reactivate a stopped session so monitoring picks up in the same session,
 // continuing on top of its existing observations, hypothesis, and workflows.
-export const resumeSession = onCall(CALLABLE_OPTS, async (request) => {
+export const resumeSession = onCall(SESSION_CALLABLE_OPTS, async (request) => {
   requireAuth(request);
   const sessionId = request.data?.sessionId as string;
   if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");

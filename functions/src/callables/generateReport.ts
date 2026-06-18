@@ -22,6 +22,11 @@ import {
   requireAuth,
   toAgentHttpsError,
 } from "./common.js";
+import { synthesizePendingObservationBatch } from "./processObservations.js";
+
+const REPORT_ANALYSIS_WAIT_MS = 210_000;
+const REPORT_ANALYSIS_POLL_MS = 2_000;
+const REPORT_ANALYSIS_MAX_PASSES = 24;
 
 export const generateReport = onCall(CALLABLE_OPTS, async (request) => {
   requireAuth(request);
@@ -29,11 +34,17 @@ export const generateReport = onCall(CALLABLE_OPTS, async (request) => {
   if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
   const timeZone = cleanTimeZone(request.data?.timeZone);
 
-  const { session, ref } = await loadSession(sessionId);
+  const { ref } = await loadSession(sessionId);
   const startedAt = Date.now();
   await ref.update({ status: "reporting" });
 
   try {
+    await ensureObservationsSynthesizedBeforeReport(sessionId, ref);
+
+    const sessionSnap = await ref.get();
+    if (!sessionSnap.exists) throw new HttpsError("not-found", "Session not found.");
+    const session = sessionSnap.data() as Session;
+
     const obsSnap = await ref.collection("observations").orderBy("timestamp", "asc").get();
     const observations = obsSnap.docs.map((d) => d.data() as Observation);
     const obsById = new Map(observations.map((o) => [o.id, o]));
@@ -114,3 +125,55 @@ export const generateReport = onCall(CALLABLE_OPTS, async (request) => {
     throw callableErr;
   }
 });
+
+export async function ensureObservationsSynthesizedBeforeReport(
+  sessionId: string,
+  ref: FirebaseFirestore.DocumentReference,
+  options: {
+    maxWaitMs?: number;
+    pollMs?: number;
+    maxPasses?: number;
+  } = {},
+): Promise<void> {
+  const maxWaitMs = options.maxWaitMs ?? REPORT_ANALYSIS_WAIT_MS;
+  const pollMs = options.pollMs ?? REPORT_ANALYSIS_POLL_MS;
+  const maxPasses = options.maxPasses ?? REPORT_ANALYSIS_MAX_PASSES;
+  const startedAt = Date.now();
+  let passes = 0;
+
+  while (Date.now() - startedAt < maxWaitMs && passes < maxPasses) {
+    if (!(await hasPendingObservationSummaries(ref))) return;
+
+    await ref.update({
+      agentActivity: "Finishing observation analysis before writing the report.",
+      agentActivityAt: Date.now(),
+    });
+
+    const result = await synthesizePendingObservationBatch(sessionId, "stop");
+    passes += result.interpreted ? 1 : 0;
+
+    if (result.reason === "no-pending" || !(await hasPendingObservationSummaries(ref))) return;
+    if (result.reason === "update-in-flight") await delay(pollMs);
+  }
+
+  throw new HttpsError(
+    "deadline-exceeded",
+    "Observation analysis is still catching up. Try generating the report again in a moment.",
+  );
+}
+
+async function hasPendingObservationSummaries(
+  ref: FirebaseFirestore.DocumentReference,
+): Promise<boolean> {
+  const pending = await ref
+    .collection("observations")
+    .where("summary", "==", "")
+    .limit(1)
+    .get();
+  return !pending.empty;
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

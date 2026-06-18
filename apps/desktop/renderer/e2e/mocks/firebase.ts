@@ -38,6 +38,22 @@ export const callables = {
       confidence: 0.84,
     },
   }),
+  ingestObservations: async () => ({
+    data: {
+      ok: true,
+      persisted: 1,
+      observationIds: ["obs-e2e"],
+    },
+  }),
+  synthesizePendingObservations: async () => ({
+    data: {
+      ok: true,
+      interpreted: true,
+      observationCount: 1,
+      currentIntent: "You are testing Focus.",
+      confidence: 0.84,
+    },
+  }),
   chatWithAgent: async () =>
     new Promise<{ data: { answer: string } }>((resolve) => {
       pendingChatResolve = resolve;

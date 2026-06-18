@@ -8,7 +8,11 @@ export {
   resumeSession,
   deleteSession,
 } from "./callables/startSession.js";
-export { processObservations } from "./callables/processObservations.js";
+export {
+  ingestObservations,
+  processObservations,
+  synthesizePendingObservations,
+} from "./callables/processObservations.js";
 export { chatWithAgent, cancelChatRun } from "./callables/chatWithAgent.js";
 export { generateReport } from "./callables/generateReport.js";
 export {

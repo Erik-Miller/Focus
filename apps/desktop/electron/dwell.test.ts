@@ -20,4 +20,17 @@ describe("DwellDetector", () => {
     expect(detector.tick(7, 0, 701)).toBe(false);
     expect(detector.tick(7, 0, 1001)).toBe(true);
   });
+
+  it("can reset between monitoring sessions", () => {
+    const detector = new DwellDetector(300, 6);
+
+    expect(detector.tick(10, 10, 0)).toBe(false);
+    expect(detector.tick(10, 10, 300)).toBe(true);
+    expect(detector.tick(10, 10, 600)).toBe(false);
+
+    detector.reset();
+
+    expect(detector.tick(10, 10, 1_000)).toBe(false);
+    expect(detector.tick(10, 10, 1_300)).toBe(true);
+  });
 });

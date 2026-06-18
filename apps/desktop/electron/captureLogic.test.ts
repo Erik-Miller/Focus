@@ -23,10 +23,10 @@ describe("capture novelty and cadence", () => {
     ).toBe("high");
   });
 
-  it("drops duplicate frames and differentiates low/medium novelty", () => {
+  it("keeps duplicate-looking dwells as low novelty and differentiates medium novelty", () => {
     const last = { hash: "0".repeat(64), app: "Chrome", title: "Docs" };
 
-    expect(classifyNoveltyForSnapshot("0".repeat(64), "Chrome", "Docs", last, 6)).toBe("duplicate");
+    expect(classifyNoveltyForSnapshot("0".repeat(64), "Chrome", "Docs", last, 6)).toBe("low");
     expect(
       classifyNoveltyForSnapshot(`${"1".repeat(6)}${"0".repeat(58)}`, "Chrome", "Docs", last, 6),
     ).toBe("low");
