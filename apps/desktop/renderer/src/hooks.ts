@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import type { ChatMessage, Observation, Report, SavedWorkflow, Session } from "@focus/shared";
@@ -77,14 +77,25 @@ export function useReport(sessionId: string | null, reportId: string | undefined
   return report;
 }
 
-export function useSavedWorkflows(max = 50): SavedWorkflow[] {
+export function useSavedWorkflows(max = 50, onSaveActivity?: () => void): SavedWorkflow[] {
   const [items, setItems] = useState<SavedWorkflow[]>([]);
+  const onSaveActivityRef = useRef(onSaveActivity);
+
+  useEffect(() => {
+    onSaveActivityRef.current = onSaveActivity;
+  }, [onSaveActivity]);
 
   useEffect(() => {
     let unsubscribeSaved: (() => void) | null = null;
+    let seenInitialSnapshot = false;
+    let knownUpdatedAtById = new Map<string, number>();
+    let latestKnownUpdatedAt = 0;
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       unsubscribeSaved?.();
       unsubscribeSaved = null;
+      seenInitialSnapshot = false;
+      knownUpdatedAtById = new Map<string, number>();
+      latestKnownUpdatedAt = 0;
       if (!user) {
         setItems([]);
         return;
@@ -98,7 +109,20 @@ export function useSavedWorkflows(max = 50): SavedWorkflow[] {
       unsubscribeSaved = onSnapshot(
         q,
         (snap) => {
-          setItems(snap.docs.map((d) => d.data() as SavedWorkflow));
+          const nextItems = snap.docs.map((d) => d.data() as SavedWorkflow);
+          if (seenInitialSnapshot) {
+            const hasSaveActivity = nextItems.some((item) => {
+              const previousUpdatedAt = knownUpdatedAtById.get(item.id);
+              return previousUpdatedAt === undefined
+                ? item.updatedAt > latestKnownUpdatedAt
+                : item.updatedAt > previousUpdatedAt;
+            });
+            if (hasSaveActivity) onSaveActivityRef.current?.();
+          }
+          knownUpdatedAtById = new Map(nextItems.map((item) => [item.id, item.updatedAt]));
+          latestKnownUpdatedAt = Math.max(0, ...nextItems.map((item) => item.updatedAt));
+          seenInitialSnapshot = true;
+          setItems(nextItems);
         },
         (err) => {
           console.warn("saved workflows listener failed", err);

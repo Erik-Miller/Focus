@@ -475,9 +475,10 @@ body {
   filter: blur(16px) saturate(1.2);
   opacity: 0.2;
 }
-/* The whole window is grabbable; controls, text inputs, and scroll handles opt out. */
+/* The renderer drives window movement manually so scrollable/content regions can
+   remain draggable without Electron swallowing mouse events. */
 .desktop .app {
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   --desktop-content-gutter: 14px;
   --chat-dock-bottom: 12px;
   --chat-dock-gutter: var(--desktop-content-gutter);
@@ -493,7 +494,7 @@ body {
   overflow: hidden;
 }
 .desktop .app-scroll {
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -508,7 +509,7 @@ body {
 }
 .desktop .app.app-report-mode .app-scroll,
 .desktop .app.app-inbox-mode .app-scroll {
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   padding: 0;
   gap: 0;
 }
@@ -631,13 +632,9 @@ body {
 }
 .desktop
   :is(
-    .session-report-section,
-    .current-session-section,
-    .timeline-card,
     .report-page-content,
     .secondary-page-content,
     .report-open-section,
-    .report-nav,
     .report,
     .report-body,
     .report-empty,
@@ -646,6 +643,26 @@ body {
   -webkit-app-region: no-drag;
   -webkit-user-select: text;
   user-select: text;
+}
+.desktop :is(.session-report-section, .current-session-section, .timeline-card, .report-nav) {
+  -webkit-app-region: no-drag;
+}
+.desktop
+  :is(
+    .awareness-details-content,
+    .awareness-accordion-content,
+    .agent-activity,
+    .md-block,
+    .workflow-detail,
+    .workflow p
+  ) {
+  -webkit-app-region: no-drag;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.desktop .launcher-bar,
+.desktop .launcher-bar :is(.lb-center, .lb-right, .lb-live, .lb-starting, .lb-livelabel) {
+  -webkit-app-region: no-drag;
 }
 /* Chat is docked to the bottom of the window: the content above scrolls, and
    padding follows the measured composer/response height. */
@@ -766,7 +783,7 @@ body {
 
 /* Compact launcher bar (collapsed desktop state) */
 .launcher-bar {
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   height: 100%;
   display: flex;
   align-items: center;
@@ -1106,6 +1123,50 @@ body {
   font-weight: 800;
   line-height: 15px;
   text-align: center;
+  transform-origin: center;
+  will-change: transform, box-shadow;
+}
+.lb-count::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(222, 115, 86, 0.72);
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+}
+.lb-count.is-pulsing {
+  animation: inbox-count-pop 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.lb-count.is-pulsing::after {
+  animation: inbox-count-ring 0.72s ease-out both;
+}
+@keyframes inbox-count-pop {
+  0% {
+    transform: scale(0.78);
+    box-shadow: 0 0 0 rgba(222, 115, 86, 0);
+  }
+  34% {
+    transform: scale(1.24);
+    box-shadow: 0 0 18px rgba(222, 115, 86, 0.5);
+  }
+  62% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(222, 115, 86, 0);
+  }
+}
+@keyframes inbox-count-ring {
+  0% {
+    opacity: 0.78;
+    transform: scale(0.62);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
 }
 
 /* Topbar */
@@ -2508,13 +2569,6 @@ body {
   color: var(--muted);
   font-size: 12px;
 }
-.saved-workflow-badges {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
 .saved-workflow-head-actions .automation-action-delete[data-slot="button"] {
   width: 32px;
   height: 32px;
@@ -2619,9 +2673,6 @@ body {
   }
   .saved-workflow-title {
     flex: 1;
-  }
-  .saved-workflow-badges {
-    justify-content: flex-start;
   }
   .saved-workflow-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3238,6 +3289,11 @@ body {
   flex: 0 0 var(--chat-response-height, 190px);
   height: var(--chat-response-height, 190px);
   min-height: 0;
+  min-width: 0;
+}
+.chat-scroll-area [data-slot="scroll-area-viewport"] {
+  min-width: 0;
+  max-width: 100%;
 }
 .chat-scroll {
   height: 100%;
@@ -3246,6 +3302,9 @@ body {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 .msg-role {
   font-size: 11px;
@@ -3255,24 +3314,32 @@ body {
   margin-bottom: 4px;
 }
 .msg {
+  min-width: 0;
   max-width: 100%;
+  box-sizing: border-box;
   animation: content-enter 0.22s ease-out both;
 }
 .msg-user {
   align-self: flex-end;
   display: flex;
+  min-width: 0;
   max-width: min(82%, 460px);
   flex-direction: column;
   align-items: flex-end;
 }
 .msg-agent {
   align-self: flex-start;
+  width: min(92%, 620px);
+  min-width: 0;
   max-width: min(92%, 620px);
 }
 .msg-user .msg-role {
   text-align: right;
 }
 .msg-user .msg-body {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--primary);
   color: #07101f;
   padding: 10px 13px;
@@ -3282,14 +3349,24 @@ body {
   text-align: left;
 }
 .msg-agent .msg-body {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--bg-elev-2);
   border: 1px solid var(--border);
   padding: 4px 13px;
   border-radius: 12px 12px 12px 4px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg-markdown {
+  min-width: 0;
+  max-width: 100%;
   font-size: 13px;
   line-height: 1.48;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg-markdown hr {
   display: none;
@@ -3299,6 +3376,8 @@ body {
 }
 .msg-markdown p {
   white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg-markdown :is(h1, h2, h3, h4) {
   margin: 14px 0 6px;
@@ -3328,6 +3407,8 @@ body {
 }
 .msg-markdown li {
   margin: 5px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg-markdown li > p {
   margin: 0;
@@ -3335,12 +3416,24 @@ body {
 .msg-markdown strong {
   color: var(--text);
   font-weight: 800;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg-markdown code {
   background: var(--bg-elev-2);
   padding: 1px 5px;
   border-radius: 5px;
   font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.msg-markdown pre {
+  max-width: 100%;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg-agent .msg-body.thinking {
   display: inline-flex;
@@ -3471,8 +3564,10 @@ body {
   margin-top: auto;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
+  min-width: 0;
 }
 .chat-input input[data-slot="input"] {
+  min-width: 0;
   font-family: var(--app-font-sans);
   font-size: 12.5px;
   font-weight: 500;
@@ -3826,6 +3921,8 @@ details[open] > summary .summary-chevron {
   .chat-shell-collapsing,
   .chat-shell-opening,
   .lb-livedot,
+  .lb-count,
+  .lb-count::after,
   .lb-livelabel-text,
   .lb-starting::before,
   .lb-starting-label,

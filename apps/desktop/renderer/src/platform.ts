@@ -16,6 +16,9 @@ export interface FocusBridge {
   stopCapture: () => Promise<void>;
   setWindowMode: (mode: WindowMode) => Promise<void>;
   setKeepInFront: (value: boolean) => Promise<boolean>;
+  beginMove: () => Promise<void>;
+  moveBy: (delta: { dx: number; dy: number }) => Promise<void>;
+  endMove: () => Promise<void>;
   beginResize: (dir: string) => Promise<void>;
   resizeBy: (delta: { dx: number; dy: number }) => Promise<void>;
   endResize: () => Promise<void>;

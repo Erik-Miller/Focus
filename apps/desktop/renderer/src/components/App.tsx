@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { ensureSignedIn, callables } from "@/firebase";
 import { getBridge, type CaptureState } from "@/platform";
 import { MonitoringController, type LiveTimelineBatch, type MonitoringStatus } from "../monitoring";
@@ -27,6 +34,27 @@ import { Launcher, ResizeHandles } from "./DesktopLauncher";
 import { SecondaryPage } from "./SecondaryPage";
 
 const SESSION_KEY = "focus.sessionId";
+const WINDOW_DRAG_IGNORE_SELECTOR = [
+  "button",
+  "a",
+  "input",
+  "textarea",
+  "select",
+  "summary",
+  "[role='button']",
+  "[role='menu']",
+  "[data-slot='button']",
+  "[contenteditable='true']",
+  ".rz",
+  ".chat-input",
+  ".chat-resize-handle",
+  ".chat-expand-tab",
+  ".tl-thumb",
+  ".tl-strip",
+  ".image-tray",
+  ".image-tray-backdrop",
+  ".sl-menu",
+].join(",");
 type AppPage = "monitor" | "report" | "inbox";
 type StartMonitoringPhase = "starting" | "resuming";
 type ReportStartCountdown = {
@@ -56,6 +84,7 @@ export function App() {
   const [page, setPage] = useState<AppPage>("monitor");
   const [chatDockHeight, setChatDockHeight] = useState(0);
   const [desktopChatCollapsed, setDesktopChatCollapsed] = useState(false);
+  const [inboxPulseKey, setInboxPulseKey] = useState(0);
   const [startingMonitoring, setStartingMonitoring] = useState<StartMonitoringPhase | null>(null);
   const [localMonitoringSessionId, setLocalMonitoringSessionId] = useState<string | null>(null);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
@@ -81,7 +110,10 @@ export function App() {
   const chat = useChat(sessionId);
   const report = useReport(sessionId, session?.reportId);
   const sessions = useSessions();
-  const savedWorkflows = useSavedWorkflows();
+  const triggerInboxPulse = useCallback(() => {
+    setInboxPulseKey((key) => key + 1);
+  }, []);
+  const savedWorkflows = useSavedWorkflows(50, triggerInboxPulse);
 
   // Switch the viewed session (review past sessions + their reports).
   const selectSession = useCallback((id: string) => {
@@ -437,6 +469,33 @@ export function App() {
       });
   }, [clearReportStartCountdown, sessionId]);
 
+  const startWindowDrag = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (event.defaultPrevented) return;
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(WINDOW_DRAG_IGNORE_SELECTOR)) return;
+
+    const bridge = getBridge();
+    if (!bridge?.beginMove || !bridge.moveBy || !bridge.endMove) return;
+
+    event.preventDefault();
+    const startX = event.screenX;
+    const startY = event.screenY;
+    void bridge.beginMove();
+
+    const onMove = (moveEvent: MouseEvent) => {
+      void bridge.moveBy({ dx: moveEvent.screenX - startX, dy: moveEvent.screenY - startY });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      void bridge.endMove();
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp, { once: true });
+  }, []);
+
   if (!ready) {
     return <div className="boot">Connecting to Focus…</div>;
   }
@@ -513,6 +572,7 @@ export function App() {
       onOpenInbox={openInbox}
       inboxActive={page === "inbox"}
       inboxCount={savedWorkflows.length}
+      inboxPulseKey={inboxPulseKey}
       onToggleExpand={expanded ? collapseToBar : openDashboard}
     />
   );
@@ -528,6 +588,7 @@ export function App() {
     <div
       className={`app${showChatDock ? " has-chat-dock" : ""}${showReportPage ? " app-report-mode" : ""}${showInboxPage ? " app-inbox-mode" : ""}`}
       style={appStyle}
+      onMouseDown={startWindowDrag}
     >
       <ResizeHandles />
       {!showReportPage && !showInboxPage && launcher}

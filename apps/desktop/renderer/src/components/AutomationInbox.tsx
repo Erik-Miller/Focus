@@ -7,7 +7,6 @@ import {
 } from "@focus/shared";
 import { callables } from "@/firebase";
 import { getBridge } from "@/platform";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SecondaryPage } from "./SecondaryPage";
 
@@ -170,9 +169,6 @@ function SavedWorkflowRow({
           <span className="saved-workflow-source">{item.sourceTitle}</span>
         </div>
         <div className="saved-workflow-head-actions">
-          <div className="saved-workflow-badges">
-            {item.lastLaunchedAt && <Badge variant="secondary">{lastLaunchLabel(item)}</Badge>}
-          </div>
           <Button
             type="button"
             className="automation-action-delete"
@@ -283,11 +279,6 @@ function buttonLabel({
   }
   if (feedback?.action === action) return feedback.label;
   return fallback;
-}
-
-function lastLaunchLabel(item: SavedWorkflow): string {
-  const target = item.lastLaunchTarget === "terminal" ? "Claude Terminal" : "Claude Desktop";
-  return `${target} ${dateLabel(item.lastLaunchedAt!)}`;
 }
 
 function dateLabel(timestamp: number): string {
