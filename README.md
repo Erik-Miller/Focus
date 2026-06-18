@@ -34,6 +34,14 @@ Read more about the rationale for the work:
 
 ## Run it
 
+### Prerequisites
+
+- Node 24, `pnpm`, and Firebase CLI v15+ (`npx firebase-tools`).
+- A Firebase project on the **Blaze** plan (Cloud Functions + Secret Manager require it).
+- Optional for automation handoff: install Claude Desktop and/or Claude Code CLI. Focus can save
+  prompts to the Workflow Inbox without them, but the handoff buttons need the Claude Desktop app or
+  a `claude` CLI command on PATH to open/send prompts to those platforms.
+
 ### Agent setup prompt
 
 Use this prompt with Claude, Codex, or another coding agent when starting from a fresh checkout:
@@ -95,19 +103,63 @@ pnpm install
 pnpm build
 ```
 
+### Run the desktop capture app (macOS)
+
+```bash
+pnpm dev:desktop
+```
+
+Grant **Screen Recording** and **Accessibility** to Electron in
+_System Settings → Privacy & Security_ the first time (the cursor‑region screenshots and the active
+window title need them). Then press **Start Focus**, work for a bit, and press **Stop Focus** to chat
+while the session report generates automatically.
+
 ## Architecture
 
-```
-Electron (macOS)                Firebase                         Model
-  dwell detector  ──dwell──▶  processObservations ─┐
-  250² crop + full frame     chatWithAgent        ├─▶ Agent harness
-  active-win (osascript)     generateReport       ┘     structured output + usage
-  dHash novelty filter             │
-        │                          ├── saveWorkflowForLater ──▶ Workflow Inbox
-        │                          │
-        └── React UI ◀── Firestore onSnapshot (awareness, timeline, chat, reports, inbox)
-                │
-                └── Claude Desktop/CLI handoff for saved automation prompts
+```mermaid
+flowchart LR
+  subgraph electron["Electron (macOS)"]
+    dwell["Dwell detector"]
+    capture["250x250 crop + full frame"]
+    active["active-win via osascript"]
+    novelty["dHash novelty filter"]
+    ui["React UI"]
+    handoff["Claude Desktop/CLI handoff"]
+  end
+
+  subgraph firebase["Firebase"]
+    process["processObservations"]
+    chat["chatWithAgent"]
+    report["generateReport"]
+    save["saveWorkflowForLater"]
+    firestore[(Firestore)]
+    inbox["Workflow Inbox"]
+  end
+
+  subgraph model["Model"]
+    harness["Agent harness"]
+    output["Structured output + usage"]
+  end
+
+  dwell -->|dwell events| process
+  capture --> process
+  active --> process
+  novelty --> process
+
+  ui -->|chat| chat
+  ui -->|report request| report
+  ui -->|saved automation prompts| handoff
+
+  process --> harness
+  chat --> harness
+  report --> harness
+  harness --> output
+
+  output --> firestore
+  output -->|automation candidate| save
+  save --> inbox
+  inbox --> firestore
+  firestore -->|onSnapshot: awareness, timeline, chat, reports, inbox| ui
 ```
 
 - **Electron** captures dwell moments locally and tags novelty with a perceptual hash before
@@ -128,25 +180,6 @@ Electron (macOS)                Firebase                         Model
 | `functions`             | Cloud Functions + the agent harness (`functions/src/agent`)    |
 | `apps/desktop`          | Electron app, native capture, and the nested React renderer    |
 | `apps/desktop/renderer` | Vite renderer loaded by the Electron shell                     |
-
-## Prerequisites
-
-- Node 24, `pnpm`, and Firebase CLI v15+ (`npx firebase-tools`).
-- A Firebase project on the **Blaze** plan (Cloud Functions + Secret Manager require it).
-- Optional for automation handoff: install Claude Desktop and/or Claude Code CLI. Focus can save
-  prompts to the Workflow Inbox without them, but the handoff buttons need the Claude Desktop app or
-  a `claude` CLI command on PATH to open/send prompts to those platforms.
-
-## Run the desktop capture app (macOS)
-
-```bash
-pnpm dev:desktop
-```
-
-Grant **Screen Recording** and **Accessibility** to Electron in
-_System Settings → Privacy & Security_ the first time (the cursor‑region screenshots and the active
-window title need them). Then press **Start Focus**, work for a bit, and press **Stop Focus** to chat
-while the session report generates automatically.
 
 ## Demo use case
 
