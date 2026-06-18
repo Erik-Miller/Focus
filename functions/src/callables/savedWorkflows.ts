@@ -87,7 +87,7 @@ export const recordSavedWorkflowLaunch = onCall(SAVED_WORKFLOW_OPTS, async (requ
   return { ok: true };
 });
 
-function savedWorkflowId(input: {
+export function savedWorkflowId(input: {
   sourceSessionId: string;
   workflow: { name: string; automationIdea: string };
 }): string {
@@ -101,16 +101,16 @@ function savedWorkflowId(input: {
     .slice(0, 32);
 }
 
-function normalizeKey(value: string): string {
+export function normalizeKey(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-function cleanTitle(value: string): string {
+export function cleanTitle(value: string): string {
   const title = value.trim().replace(/\s+/g, " ").slice(0, MAX_TITLE_LENGTH);
   return title || "Untitled session";
 }
 
-function cleanDocId(value: unknown): string | null {
+export function cleanDocId(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const id = value.trim();
   return /^[A-Fa-f0-9]{32}$/.test(id) ? id : null;

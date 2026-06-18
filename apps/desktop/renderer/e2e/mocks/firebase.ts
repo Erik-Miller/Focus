@@ -1,0 +1,73 @@
+import type { SavedWorkflowLaunchTarget, Workflow } from "@focus/shared";
+
+type SavedWorkflowInput = {
+  workflow: Workflow;
+  prompt: string;
+  sourceSessionId: string;
+  sourceReportId?: string;
+  sourceTitle: string;
+};
+
+export const savedWorkflows: SavedWorkflowInput[] = [];
+export const launches: Array<{ id: string; target: SavedWorkflowLaunchTarget }> = [];
+let pendingChatResolve: ((value: { data: { answer: string } }) => void) | null = null;
+
+export function resetE2eFirebaseMocks(): void {
+  savedWorkflows.length = 0;
+  launches.length = 0;
+}
+
+export const callables = {
+  startSession: async () => ({ data: { sessionId: "session-e2e" } }),
+  stopSession: async () => ({ data: { ok: true } }),
+  resumeSession: async () => ({ data: { ok: true } }),
+  deleteSession: async () => ({ data: { ok: true } }),
+  processObservations: async () => ({
+    data: {
+      ok: true,
+      interpreted: true,
+      currentIntent: "You are testing Focus.",
+      confidence: 0.84,
+    },
+  }),
+  chatWithAgent: async ({ message }: { message: string }) =>
+    new Promise<{ data: { answer: string } }>((resolve) => {
+      pendingChatResolve = resolve;
+      window.setTimeout(() => {
+        if (pendingChatResolve === resolve) {
+          pendingChatResolve = null;
+          resolve({ data: { answer: `You asked: ${message}` } });
+        }
+      }, 5_000);
+    }),
+  cancelChatRun: async () => {
+    pendingChatResolve?.({ data: { answer: "" } });
+    pendingChatResolve = null;
+    return { data: { ok: true } };
+  },
+  generateReport: async () => ({ data: { reportId: "report-e2e" } }),
+  saveWorkflowForLater: async (input: SavedWorkflowInput) => {
+    savedWorkflows.push(input);
+    window.dispatchEvent(new CustomEvent("focus-e2e-saved-workflows"));
+    return { data: { id: "saved-e2e" } };
+  },
+  deleteSavedWorkflow: async ({ id }: { id: string }) => {
+    const index = savedWorkflows.findIndex((item) => item.workflow.name === id);
+    if (index >= 0) savedWorkflows.splice(index, 1);
+    window.dispatchEvent(new CustomEvent("focus-e2e-saved-workflows"));
+    return { data: { ok: true } };
+  },
+  recordSavedWorkflowLaunch: async (launch: { id: string; target: SavedWorkflowLaunchTarget }) => {
+    launches.push(launch);
+    return { data: { ok: true } };
+  },
+};
+
+export async function ensureSignedIn() {
+  return { uid: "uid-e2e" };
+}
+
+export const app = {};
+export const auth = {};
+export const db = {};
+export const functions = {};
