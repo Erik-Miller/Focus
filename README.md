@@ -112,6 +112,22 @@ _System Settings → Privacy & Security_ the first time (the cursor‑region scr
 window title need them). Then press **Start Focus**, work for a bit, and press **Stop Focus** to chat
 while the session report generates automatically.
 
+## Demo use case
+
+A simple way to try the whole loop is a short news-browsing session:
+
+1. Press **Start Focus**.
+2. Visit 3-5 news sites and browse normally for a few minutes: scan headlines, open articles,
+   compare coverage, search, and switch between tabs.
+3. Press **Stop Focus** and wait for the session report to generate automatically.
+4. Review what Focus thinks you were doing, including any repeated workflows it noticed.
+5. If the report or Workflow Inbox includes an automation-ready workflow, click the Claude handoff to
+   launch the prepared prompt immediately. Claude Desktop or Claude Code CLI must be installed for
+   those handoff buttons to open/send the prompt.
+
+This shows the intended shape of the product: Focus observes and explains the browsing workflow,
+then packages any repetitive follow-up work for a separate agent to build.
+
 ## Architecture
 
 ```mermaid
@@ -169,22 +185,6 @@ sequenceDiagram
 | `functions`             | Cloud Functions + the agent harness (`functions/src/agent`)    |
 | `apps/desktop`          | Electron app, native capture, and the nested React renderer    |
 | `apps/desktop/renderer` | Vite renderer loaded by the Electron shell                     |
-
-## Demo use case
-
-A simple way to try the whole loop is a short news-browsing session:
-
-1. Press **Start Focus**.
-2. Visit 3-5 news sites and browse normally for a few minutes: scan headlines, open articles,
-   compare coverage, search, and switch between tabs.
-3. Press **Stop Focus** and wait for the session report to generate automatically.
-4. Review what Focus thinks you were doing, including any repeated workflows it noticed.
-5. If the report or Workflow Inbox includes an automation-ready workflow, click the Claude handoff to
-   launch the prepared prompt immediately. Claude Desktop or Claude Code CLI must be installed for
-   those handoff buttons to open/send the prompt.
-
-This shows the intended shape of the product: Focus observes and explains the browsing workflow,
-then packages any repetitive follow-up work for a separate agent to build.
 
 ## Testing
 
