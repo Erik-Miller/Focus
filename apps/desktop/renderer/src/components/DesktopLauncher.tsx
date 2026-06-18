@@ -4,6 +4,16 @@ import { getBridge } from "@/platform";
 
 export type LiveMonitoringPhase = "monitoring" | "capturing" | "analyzing" | "stopping";
 
+const LAUNCHER_DRAG_IGNORE_SELECTOR = [
+  "button",
+  "a",
+  "input",
+  "textarea",
+  "select",
+  "[role='button']",
+  "[data-slot='button']",
+].join(",");
+
 export function Launcher({
   busy,
   monitoring,
@@ -17,6 +27,7 @@ export function Launcher({
   onOpenInbox,
   inboxActive,
   inboxCount,
+  inboxPulseKey,
   onToggleExpand,
 }: {
   busy: string | null;
@@ -31,13 +42,43 @@ export function Launcher({
   onOpenInbox: () => void;
   inboxActive: boolean;
   inboxCount: number;
+  inboxPulseKey: number;
   onToggleExpand: () => void;
 }) {
   const disabled = Boolean(busy);
   const startPending = Boolean(startingLabel);
+  const startWindowDrag = (event: ReactMouseEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(LAUNCHER_DRAG_IGNORE_SELECTOR)) return;
+
+    const bridge = getBridge();
+    if (!bridge?.beginMove || !bridge.moveBy || !bridge.endMove) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.screenX;
+    const startY = event.screenY;
+    void bridge.beginMove();
+
+    const onMove = (moveEvent: MouseEvent) => {
+      void bridge.moveBy({ dx: moveEvent.screenX - startX, dy: moveEvent.screenY - startY });
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      void bridge.endMove();
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp, { once: true });
+  };
 
   return (
-    <div className={expanded ? "launcher-bar lb-header" : "launcher-bar lb-collapsed"}>
+    <div
+      className={expanded ? "launcher-bar lb-header" : "launcher-bar lb-collapsed"}
+      onMouseDown={startWindowDrag}
+    >
       <button
         className="lb-btn lb-ghost"
         onClick={onNew}
@@ -88,7 +129,14 @@ export function Launcher({
           aria-label="Workflow Inbox"
         >
           <Inbox aria-hidden />
-          {inboxCount > 0 && <span className="lb-count">{inboxCount}</span>}
+          {inboxCount > 0 && (
+            <span
+              key={inboxPulseKey}
+              className={`lb-count${inboxPulseKey > 0 ? " is-pulsing" : ""}`}
+            >
+              {inboxCount}
+            </span>
+          )}
         </button>
         <button
           className="lb-icon"

@@ -63,6 +63,8 @@ let resizeInFlight = false;
 let interactiveResize = false;
 let resizeStartBounds: Electron.Rectangle | null = null;
 let resizeDir = "";
+let interactiveMove = false;
+let moveStartBounds: Electron.Rectangle | null = null;
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let capturing = false;
@@ -232,6 +234,18 @@ function computeInteractiveBounds(dx: number, dy: number): Electron.Rectangle {
     minWidth: DOCKLET_MIN_WIDTH,
     minHeight: DOCKLET_MIN_HEIGHT,
   });
+}
+
+function computeInteractiveMoveBounds(dx: number, dy: number): Electron.Rectangle {
+  const start = moveStartBounds!;
+  const work = workAreaFor(start);
+  const maxX = work.x + work.width - Math.min(80, start.width);
+  const maxY = work.y + work.height - Math.min(64, start.height);
+  return {
+    ...start,
+    x: clamp(Math.round(start.x + dx), work.x - start.width + 80, maxX),
+    y: clamp(Math.round(start.y + dy), work.y, maxY),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -490,6 +504,24 @@ ipcMain.handle("focus:setKeepInFront", (_event, value: boolean) => {
   keepInFrontWhileMonitoring = Boolean(value);
   applyKeepInFront();
   return keepInFrontWhileMonitoring;
+});
+ipcMain.handle("focus:beginMove", () => {
+  if (!win) return false;
+  interactiveMove = true;
+  moveStartBounds = win.getBounds();
+  clearResizeAnimation();
+  return true;
+});
+ipcMain.handle("focus:moveBy", (_event, delta: { dx: number; dy: number }) => {
+  if (!win || !interactiveMove || !moveStartBounds) return false;
+  win.setBounds(computeInteractiveMoveBounds(delta?.dx ?? 0, delta?.dy ?? 0), false);
+  return true;
+});
+ipcMain.handle("focus:endMove", () => {
+  interactiveMove = false;
+  moveStartBounds = null;
+  schedulePersist();
+  return true;
 });
 ipcMain.handle("focus:beginResize", (_event, dir: string) => {
   if (!win) return false;

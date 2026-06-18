@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { directAddressText, type Observation, type UsageAggregate } from "@focus/shared";
 import { Card } from "@/components/ui/card";
 import { loadObservationImages, type LocalObservationImages } from "../localObservationImages";
@@ -97,13 +98,16 @@ export function Timeline({
           );
         })}
       </ul>
-      {selectedEntry && (
-        <BatchImageTray
-          entry={selectedEntry}
-          localImages={localImages}
-          onClose={() => setSelectedEntry(null)}
-        />
-      )}
+      {selectedEntry &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <BatchImageTray
+            entry={selectedEntry}
+            localImages={localImages}
+            onClose={() => setSelectedEntry(null)}
+          />,
+          document.body,
+        )}
     </Card>
   );
 }

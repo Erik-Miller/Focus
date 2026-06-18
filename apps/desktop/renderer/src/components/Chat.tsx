@@ -313,12 +313,12 @@ export function Chat({
                   <div className="msg msg-agent">
                     <div className="msg-role">Focus</div>
                     <div className="msg-body thinking">
+                      <span>{stopping ? "Stopping" : "Thinking"}</span>
                       <span className="thinking-dots" aria-hidden>
                         <span />
                         <span />
                         <span />
                       </span>
-                      <span>{stopping ? "Stopping" : "Thinking"}</span>
                     </div>
                   </div>
                 )}
