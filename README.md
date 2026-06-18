@@ -44,24 +44,39 @@ You are helping set up the Focus repo on this machine. Work in the current repos
 Please:
 1. Inspect README.md, package.json, firebase.json, functions/package.json, and .nvmrc before making
    changes.
-2. Ensure Node 24 is active. If a version manager is available, use .nvmrc. If Node 24 is not
-   installed, tell me the exact install command for this machine and stop before making unrelated
+2. Ensure Node 24 is active from .nvmrc. If nvm is installed but not loaded in the shell, source
+   ~/.nvm/nvm.sh, then run nvm install && nvm use. If Node 24 is not installed and no version manager
+   is available, tell me the exact install command for this machine and stop before making unrelated
    changes.
-3. Ensure pnpm is available, and ensure Firebase CLI v15+ is available through either the global
-   firebase command or npx firebase-tools.
-4. Run pnpm install. Allow normal dependency and postinstall binary downloads, including Electron,
+3. Ensure pnpm matches the packageManager field. Prefer Corepack:
+   corepack enable
+   corepack prepare pnpm@9.15.9 --activate
+   Then confirm node -v and pnpm -v.
+4. Ensure Firebase CLI v15+ is available through either the global firebase command or
+   npx firebase-tools --version. Do not deploy.
+5. Run pnpm install. Allow normal dependency and postinstall binary downloads, including Electron,
    esbuild/tsup, Vite, and Firebase tooling. If a binary download is blocked by network, proxy,
    cache, or permissions, report the failing package, URL or host if visible, and the command that
    failed.
-5. Run pnpm build.
-6. Do not deploy, do not create or change secrets, and do not print secret values. If local model
+6. Run pnpm build before launching the app. If the build fails, fix only minimal setup/build issues,
+   explain the change first, and rerun pnpm build.
+7. If Electron fails with "Electron failed to install correctly" or a macOS dyld error about a
+   missing "Electron Framework", treat it as a broken local Electron binary install, not application
+   code. Try pnpm rebuild electron, then verify Electron from apps/desktop. If needed, remove only
+   Electron's broken generated dist/path marker and reinstall/re-extract the Electron package, then
+   retry. A healthy macOS Electron dist is hundreds of MB and contains
+   Electron.app/Contents/Frameworks.
+8. Do not deploy, do not create or change secrets, and do not print secret values. If local model
    credentials are already configured and I ask for the integration check, run:
    pnpm --filter @focus/functions run validate
    Otherwise skip validation and say credentials are required.
-7. If the desktop app needs to be smoke-tested on macOS, run pnpm dev:desktop and remind me to grant
-   Screen Recording and Accessibility permissions when prompted.
-8. Report the Node, pnpm, and Firebase CLI versions, the commands you ran, whether the build passed,
-   and any remaining blockers.
+9. If the desktop app needs to be smoke-tested on macOS, run pnpm dev:desktop. Confirm the Vite
+   renderer is serving on port 5173 and that an Electron window titled
+   "Focus — attention-observing agent" opens. Remind me to grant Screen Recording and Accessibility
+   permissions when prompted. If checking the renderer in a normal browser, "Connecting to Focus…"
+   can be expected because the full app relies on Electron's preload bridge.
+10. Report the Node, pnpm, and Firebase CLI versions, the commands you ran, whether install/build/app
+   launch passed, and any remaining blockers.
 
 Do not modify application code unless a setup or build failure requires a minimal fix. Explain any
 code/config change before making it.
