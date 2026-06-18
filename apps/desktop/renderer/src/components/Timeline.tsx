@@ -252,7 +252,7 @@ function statusLabelForEntry(entry: TimelineEntry): string {
 function statusLabelForStatus(status: TimelineEntryStatus): string {
   if (status === "captured") return "Captured";
   if (status === "analyzing") return "Analyzing";
-  return "Analyzed";
+  return "Completed";
 }
 
 function pendingTextForEntry(entry: TimelineEntry): string {
@@ -346,7 +346,7 @@ function BatchImageTray({
       ? "Captured images"
       : entry.status === "analyzing"
         ? "Images being analyzed"
-        : "Analyzed images";
+        : "Completed images";
 
   return (
     <div className="image-tray-backdrop" role="presentation" onMouseDown={onClose}>
