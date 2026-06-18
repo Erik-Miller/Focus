@@ -1353,6 +1353,7 @@ body {
   margin: 0;
 }
 .report-nav-copy {
+  flex: 1;
   min-width: 0;
 }
 .report-nav-title-row {
@@ -1401,9 +1402,9 @@ body {
   margin: 0;
   color: var(--muted);
   font-size: 12.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .report-nav-actions {
   display: flex;

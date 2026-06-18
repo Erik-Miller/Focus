@@ -636,7 +636,7 @@ export function App() {
                 </div>
               )}
               <div className="current-session-section">
-                <div className="current-session-label">Current Session</div>
+                <div className="current-session-label">Current Focus</div>
                 <AgentAwareness session={session} observations={observations} />
               </div>
               <Timeline
