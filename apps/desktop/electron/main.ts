@@ -1,0 +1,572 @@
+import fs from "node:fs";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { app, BrowserWindow, clipboard, ipcMain, screen, shell, systemPreferences } from "electron";
+import liquidGlass from "electron-liquid-glass";
+import { DEFAULT_MONITORING_CONFIG, type DwellInput, type Novelty } from "@focus/shared";
+import { DwellDetector } from "./dwell.js";
+import { captureCursorCrop, captureFullScreen, dHash, getActiveWindow } from "./capture.js";
+import { classifyNoveltyForSnapshot, shouldCaptureFullScreenSnapshot } from "./captureLogic.js";
+import {
+  cleanAutomationInput,
+  shellQuote,
+  appleScriptString,
+  type AutomationLaunchInput,
+} from "./automationLaunch.js";
+import {
+  clamp,
+  computeInteractiveBoundsInWorkArea,
+  preservePositionForSizeInWorkArea,
+} from "./windowGeometry.js";
+
+const cfg = DEFAULT_MONITORING_CONFIG;
+const isDev = process.env.FOCUS_DEV === "1";
+const execFileAsync = promisify(execFile);
+const APP_ICON_PATH = path.resolve(__dirname, "..", "assets", "focus-icon-1024.png");
+const APP_DOCK_ICON_PATH = path.resolve(__dirname, "..", "assets", "focus-dock-icon-1024.png");
+
+// Focus is a frameless, transparent floating utility panel (a "docklet"):
+// renderer-owned chrome + CSS drag regions, native bounds animation for
+// collapsed/expanded states. It launches centered/open, then users can drag and
+// resize it while sizing persists across launches. It stays above other windows
+// only while monitoring is active.
+const DOCKLET_MIN_WIDTH = 370;
+const DOCKLET_MIN_HEIGHT = 71;
+const DEFAULT_WIDTH = 380;
+const COMPACT_HEIGHT = 72;
+const DEFAULT_EXPANDED_HEIGHT = 560;
+const CENTER_ZONE_FRACTION = 0.25;
+const RESIZE_ANIM_MS = 230;
+const RESIZE_FRAME_MS = 1000 / 60;
+
+type WindowMode = "compact" | "full";
+interface WindowState {
+  x: number;
+  y: number;
+  width: number;
+  expandedHeight: number;
+}
+
+let win: BrowserWindow | null = null;
+
+let keepInFrontWhileMonitoring = true;
+let windowMode: WindowMode = "full";
+let expandedHeight = DEFAULT_EXPANDED_HEIGHT;
+
+let resizeAnimToken = 0;
+let resizeAnimTimer: ReturnType<typeof setTimeout> | null = null;
+let resizeInFlight = false;
+
+// Renderer-driven edge/corner resize (transparent frameless windows can't be
+// resized from the native edges, so grips in the UI drive the bounds instead).
+let interactiveResize = false;
+let resizeStartBounds: Electron.Rectangle | null = null;
+let resizeDir = "";
+let interactiveMove = false;
+let moveStartBounds: Electron.Rectangle | null = null;
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let capturing = false;
+const detector = new DwellDetector(cfg.dwellMs, cfg.dwellRadiusPx);
+let lastEmitted: { hash: string; app: string; title: string } = { hash: "", app: "", title: "" };
+let emittedSnapshotCount = 0;
+
+function emitCaptureState(state: "idle" | "capturing") {
+  win?.webContents.send("focus:capture-state", state);
+}
+
+// ---------------------------------------------------------------------------
+// Geometry helpers
+// ---------------------------------------------------------------------------
+
+function workAreaFor(bounds: Electron.Rectangle): Electron.Rectangle {
+  return screen.getDisplayMatching(bounds).workArea;
+}
+
+function windowStatePath(): string {
+  return path.join(app.getPath("userData"), "focus-window-state.json");
+}
+
+// Keep whichever edge/center the docklet is visually attached to fixed while the
+// height changes, then clamp onto the work area.
+function preservePositionForSize(
+  bounds: Electron.Rectangle,
+  width: number,
+  height: number,
+): Electron.Rectangle {
+  return preservePositionForSizeInWorkArea(
+    bounds,
+    width,
+    height,
+    workAreaFor(bounds),
+    CENTER_ZONE_FRACTION,
+  );
+}
+
+function clampBoundsWidth(bounds: Electron.Rectangle): Electron.Rectangle {
+  const width = Math.max(DOCKLET_MIN_WIDTH, Math.round(bounds.width));
+  if (width === bounds.width) return bounds;
+  return preservePositionForSize(bounds, width, bounds.height);
+}
+
+// ---------------------------------------------------------------------------
+// Persisted sizing + centered launch placement
+// ---------------------------------------------------------------------------
+
+function getInitialWindowState(): WindowState {
+  const work = screen.getPrimaryDisplay().workArea;
+  const centeredState = (width: number, expandedHeight: number): WindowState => {
+    const safeWidth = clamp(width, DOCKLET_MIN_WIDTH, work.width);
+    const safeExpandedHeight = clamp(expandedHeight, 200, work.height);
+    return {
+      width: safeWidth,
+      x: work.x + Math.round((work.width - safeWidth) / 2),
+      y: work.y + Math.round((work.height - safeExpandedHeight) / 2),
+      expandedHeight: safeExpandedHeight,
+    };
+  };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(windowStatePath(), "utf8")) as Partial<WindowState>;
+    const width = typeof parsed.width === "number" ? parsed.width : DEFAULT_WIDTH;
+    const eh = parsed.expandedHeight ?? DEFAULT_EXPANDED_HEIGHT;
+    return centeredState(width, eh);
+  } catch {
+    return centeredState(DEFAULT_WIDTH, DEFAULT_EXPANDED_HEIGHT);
+  }
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersist(): void {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistWindowState, 150);
+}
+
+function persistWindowState(): void {
+  if (!win || win.isDestroyed()) return;
+  const bounds = clampBoundsWidth(win.getBounds());
+  const payload: WindowState = {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    expandedHeight,
+  };
+  try {
+    fs.mkdirSync(app.getPath("userData"), { recursive: true });
+    fs.writeFileSync(windowStatePath(), JSON.stringify(payload, null, 2));
+  } catch (err) {
+    console.error("Failed to persist window state", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Animated height (collapsed <-> expanded), anchor-preserving
+// ---------------------------------------------------------------------------
+
+function clearResizeAnimation(): void {
+  resizeAnimToken += 1;
+  if (resizeAnimTimer) {
+    clearTimeout(resizeAnimTimer);
+    resizeAnimTimer = null;
+  }
+  resizeInFlight = false;
+}
+
+function setBoundsForHeight(window: BrowserWindow, height: number, ref = window.getBounds()): void {
+  const width = Math.max(DOCKLET_MIN_WIDTH, ref.width);
+  const nextHeight = Math.max(DOCKLET_MIN_HEIGHT, Math.round(height));
+  window.setBounds(preservePositionForSize(ref, width, nextHeight), false);
+}
+
+function animateHeight(window: BrowserWindow, targetHeight: number): void {
+  const startBounds = window.getBounds();
+  const startHeight = startBounds.height;
+  const startWidth = Math.max(DOCKLET_MIN_WIDTH, startBounds.width);
+  const nextHeight = Math.max(DOCKLET_MIN_HEIGHT, Math.round(targetHeight));
+
+  clearResizeAnimation();
+
+  if (Math.abs(nextHeight - startHeight) <= 1) {
+    setBoundsForHeight(window, nextHeight, startBounds);
+    return;
+  }
+
+  const token = resizeAnimToken;
+  const startedAt = Date.now();
+  resizeInFlight = true;
+
+  const tick = () => {
+    if (!win || win.isDestroyed() || win.id !== window.id || token !== resizeAnimToken) {
+      resizeInFlight = false;
+      return;
+    }
+    const progress = Math.min(1, (Date.now() - startedAt) / RESIZE_ANIM_MS);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const h = Math.round(startHeight + (nextHeight - startHeight) * eased);
+    window.setBounds(preservePositionForSize(startBounds, startWidth, h), false);
+    if (progress >= 1) {
+      resizeAnimTimer = null;
+      resizeInFlight = false;
+      setBoundsForHeight(window, nextHeight, startBounds);
+      return;
+    }
+    resizeAnimTimer = setTimeout(tick, RESIZE_FRAME_MS);
+  };
+  tick();
+}
+
+function setWindowMode(mode: WindowMode): void {
+  if (!win) return;
+  windowMode = mode;
+  animateHeight(win, mode === "compact" ? COMPACT_HEIGHT : expandedHeight);
+}
+
+// Compute new bounds from the drag start, the grip direction, and the cursor
+// delta (in screen DIPs), enforcing the minimum size and the work area.
+function computeInteractiveBounds(dx: number, dy: number): Electron.Rectangle {
+  const start = resizeStartBounds!;
+  return computeInteractiveBoundsInWorkArea({
+    start,
+    resizeDir,
+    dx,
+    dy,
+    work: workAreaFor(start),
+    minWidth: DOCKLET_MIN_WIDTH,
+    minHeight: DOCKLET_MIN_HEIGHT,
+  });
+}
+
+function computeInteractiveMoveBounds(dx: number, dy: number): Electron.Rectangle {
+  const start = moveStartBounds!;
+  const work = workAreaFor(start);
+  const maxX = work.x + work.width - Math.min(80, start.width);
+  const maxY = work.y + work.height - Math.min(64, start.height);
+  return {
+    ...start,
+    x: clamp(Math.round(start.x + dx), work.x - start.width + 80, maxX),
+    y: clamp(Math.round(start.y + dy), work.y, maxY),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Always-on-top while monitoring
+// ---------------------------------------------------------------------------
+
+function applyKeepInFront(): void {
+  if (win && !win.isDestroyed())
+    win.setAlwaysOnTop(keepInFrontWhileMonitoring && Boolean(pollTimer));
+}
+
+// ---------------------------------------------------------------------------
+// Window
+// ---------------------------------------------------------------------------
+
+function applyLiquidGlass(window: BrowserWindow) {
+  try {
+    const handle = window.getNativeWindowHandle();
+    const glassId = liquidGlass.addView(handle, {
+      cornerRadius: 18,
+      tintColor: "#0a0a0b55",
+    });
+    liquidGlass.unstable_setVariant(glassId, 2);
+  } catch (err) {
+    console.error("liquid glass unavailable (needs macOS 26+):", err);
+    // Fall back to the native vibrancy material so the panel still reads as glass.
+    try {
+      window.setVibrancy("under-window");
+    } catch {
+      /* vibrancy unsupported */
+    }
+  }
+}
+
+function createWindow() {
+  const initial = getInitialWindowState();
+  expandedHeight = initial.expandedHeight;
+  windowMode = "full";
+
+  win = new BrowserWindow({
+    show: false,
+    x: initial.x,
+    y: initial.y,
+    width: initial.width,
+    height: expandedHeight,
+    minWidth: DOCKLET_MIN_WIDTH,
+    minHeight: DOCKLET_MIN_HEIGHT,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: true,
+    hasShadow: true,
+    acceptFirstMouse: true,
+    alwaysOnTop: false,
+    roundedCorners: true,
+    icon: APP_ICON_PATH,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  win.webContents.once("did-finish-load", () => {
+    if (win) applyLiquidGlass(win);
+  });
+
+  // Show without stealing focus from the user's current app (utility panel).
+  win.once("ready-to-show", () => {
+    applyKeepInFront();
+    win?.showInactive();
+  });
+
+  win.on("move", () => {
+    schedulePersist();
+  });
+
+  win.on("resize", () => {
+    if (resizeInFlight) return;
+    // Remember the user's expanded height so future expansions restore it.
+    const h = win!.getBounds().height;
+    if (windowMode === "full" && h > COMPACT_HEIGHT + 8) expandedHeight = h;
+    schedulePersist();
+  });
+
+  win.on("close", persistWindowState);
+
+  win.on("closed", () => {
+    win = null;
+  });
+
+  if (isDev) {
+    win.loadURL("http://localhost:5173");
+  } else {
+    win.loadFile(path.resolve(__dirname, "..", "renderer", "dist", "index.html"));
+  }
+}
+
+function applyAppIcon() {
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(APP_DOCK_ICON_PATH);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Capture / dwell
+// ---------------------------------------------------------------------------
+
+function classifyNovelty(hash: string, appName: string, title: string): Novelty {
+  return classifyNoveltyForSnapshot(hash, appName, title, lastEmitted, cfg.duplicateHashDistance);
+}
+
+function shouldCaptureFullScreen(nextSnapshotNumber: number): boolean {
+  return shouldCaptureFullScreenSnapshot(nextSnapshotNumber, cfg.fullScreenshotEverySnapshots);
+}
+
+async function onDwell() {
+  if (capturing || !win) return;
+  capturing = true;
+  emitCaptureState("capturing");
+  try {
+    const cursor = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursor).bounds;
+    const [{ cropDataUrl, cropImage }, activeWin] = await Promise.all([
+      captureCursorCrop(cursor, display, cfg.captureSize),
+      getActiveWindow(),
+    ]);
+    const hash = cropImage ? dHash(cropImage) : "capture-unavailable";
+    const novelty = classifyNovelty(hash, activeWin.app, activeWin.title);
+
+    const nextSnapshotNumber = emittedSnapshotCount + 1;
+    const fullDataUrl = shouldCaptureFullScreen(nextSnapshotNumber)
+      ? await captureFullScreen()
+      : undefined;
+    lastEmitted = { hash, app: activeWin.app, title: activeWin.title };
+    emittedSnapshotCount = nextSnapshotNumber;
+
+    const dwell: DwellInput = {
+      timestamp: Date.now(),
+      app: activeWin.app,
+      windowTitle: activeWin.title,
+      mouse: { x: cursor.x, y: cursor.y },
+      dwellMs: cfg.dwellMs,
+      novelty,
+      frameHash: hash,
+      fullScreenshotDataUrl: fullDataUrl,
+      cursorCropDataUrl: cropDataUrl,
+    };
+    win.webContents.send("focus:dwell", dwell);
+  } catch (err) {
+    console.error("capture error", err);
+  } finally {
+    capturing = false;
+    emitCaptureState("idle");
+  }
+}
+
+function startCapture() {
+  if (pollTimer) return;
+  detector.reset();
+  lastEmitted = { hash: "", app: "", title: "" };
+  emittedSnapshotCount = 0;
+  pollTimer = setInterval(() => {
+    const p = screen.getCursorScreenPoint();
+    if (detector.tick(p.x, p.y, Date.now())) {
+      void onDwell();
+    }
+  }, cfg.pollIntervalMs);
+  applyKeepInFront();
+}
+
+function stopCapture() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+  applyKeepInFront();
+  if (capturing) emitCaptureState("idle");
+}
+
+// ---------------------------------------------------------------------------
+// Automation handoff
+// ---------------------------------------------------------------------------
+
+function promptFilePath(): string {
+  const name = `focus-claude-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
+  return path.join(app.getPath("temp"), name);
+}
+
+async function openClaudeDesktop(prompt: string): Promise<void> {
+  clipboard.writeText(prompt);
+  if (process.platform === "darwin") {
+    await execFileAsync("open", ["-a", "Claude"]);
+    return;
+  }
+  await shell.openExternal("https://claude.ai/new");
+}
+
+async function openClaudeTerminal(prompt: string): Promise<void> {
+  clipboard.writeText(prompt);
+  if (process.platform !== "darwin") {
+    throw new Error("Launching Claude in Terminal is currently supported on macOS only.");
+  }
+  await ensureClaudeCli();
+
+  const filePath = promptFilePath();
+  fs.writeFileSync(filePath, prompt, { mode: 0o600 });
+
+  const command = [
+    `cd ${shellQuote(app.getPath("home"))}`,
+    `claude "$(cat ${shellQuote(filePath)})"`,
+  ].join(" && ");
+  const commandWithCleanup = `${command}; rm -f ${shellQuote(filePath)}`;
+
+  await execFileAsync("osascript", [
+    "-e",
+    'tell application "Terminal" to activate',
+    "-e",
+    `tell application "Terminal" to do script ${appleScriptString(commandWithCleanup)}`,
+  ]);
+}
+
+async function ensureClaudeCli(): Promise<void> {
+  const shellPath = process.env.SHELL || "/bin/zsh";
+  try {
+    await execFileAsync(shellPath, ["-lc", "command -v claude"]);
+  } catch {
+    throw new Error("Claude CLI was not found. Install it or make sure `claude` is on your PATH.");
+  }
+}
+
+async function runAutomation(input: Partial<AutomationLaunchInput>) {
+  const cleaned = cleanAutomationInput(input);
+  if (cleaned.target === "terminal") {
+    await openClaudeTerminal(cleaned.prompt);
+  } else {
+    await openClaudeDesktop(cleaned.prompt);
+  }
+  return { ok: true, copied: true, title: cleaned.title, target: cleaned.target };
+}
+
+// ---------------------------------------------------------------------------
+// IPC
+// ---------------------------------------------------------------------------
+
+ipcMain.handle("focus:start", () => {
+  startCapture();
+  return true;
+});
+ipcMain.handle("focus:stop", () => {
+  stopCapture();
+  return true;
+});
+ipcMain.handle("focus:windowMode", (_event, mode: WindowMode) => {
+  setWindowMode(mode);
+  return true;
+});
+ipcMain.handle("focus:setKeepInFront", (_event, value: boolean) => {
+  keepInFrontWhileMonitoring = Boolean(value);
+  applyKeepInFront();
+  return keepInFrontWhileMonitoring;
+});
+ipcMain.handle("focus:beginMove", () => {
+  if (!win) return false;
+  interactiveMove = true;
+  moveStartBounds = win.getBounds();
+  clearResizeAnimation();
+  return true;
+});
+ipcMain.handle("focus:moveBy", (_event, delta: { dx: number; dy: number }) => {
+  if (!win || !interactiveMove || !moveStartBounds) return false;
+  win.setBounds(computeInteractiveMoveBounds(delta?.dx ?? 0, delta?.dy ?? 0), false);
+  return true;
+});
+ipcMain.handle("focus:endMove", () => {
+  interactiveMove = false;
+  moveStartBounds = null;
+  schedulePersist();
+  return true;
+});
+ipcMain.handle("focus:beginResize", (_event, dir: string) => {
+  if (!win) return false;
+  interactiveResize = true;
+  resizeDir = String(dir);
+  resizeStartBounds = win.getBounds();
+  clearResizeAnimation();
+  return true;
+});
+ipcMain.handle("focus:resizeBy", (_event, delta: { dx: number; dy: number }) => {
+  if (!win || !interactiveResize || !resizeStartBounds) return false;
+  win.setBounds(computeInteractiveBounds(delta?.dx ?? 0, delta?.dy ?? 0), false);
+  return true;
+});
+ipcMain.handle("focus:endResize", () => {
+  interactiveResize = false;
+  resizeStartBounds = null;
+  resizeDir = "";
+  schedulePersist();
+  return true;
+});
+ipcMain.handle("focus:close", () => {
+  win?.close();
+  return true;
+});
+ipcMain.handle("focus:runAutomation", async (_event, input: Partial<AutomationLaunchInput>) => {
+  return runAutomation(input);
+});
+ipcMain.handle("focus:permissions", () => {
+  const screenStatus = systemPreferences.getMediaAccessStatus("screen") === "granted";
+  const accessibility = systemPreferences.isTrustedAccessibilityClient(false);
+  return { screen: screenStatus, accessibility };
+});
+
+app.whenReady().then(() => {
+  applyAppIcon();
+  createWindow();
+});
+
+app.on("window-all-closed", () => {
+  stopCapture();
+  if (process.platform !== "darwin") app.quit();
+});
+
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});

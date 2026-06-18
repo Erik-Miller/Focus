@@ -1,0 +1,26 @@
+{
+  "name": "@focus/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "build": "pnpm run build:renderer && pnpm run build:electron",
+    "build:electron": "tsup",
+    "build:renderer": "pnpm --filter @focus/desktop-renderer run build",
+    "dev": "pnpm run build:electron && concurrently -k -n renderer,electron \"pnpm --filter @focus/desktop-renderer run dev\" \"wait-on tcp:5173 && cross-env FOCUS_DEV=1 electron .\"",
+    "start": "pnpm run build && electron ."
+  },
+  "dependencies": {
+    "@focus/shared": "workspace:*",
+    "electron-liquid-glass": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "wait-on": "^8.0.1"
+  }
+}
