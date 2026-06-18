@@ -849,8 +849,8 @@ body {
   color: var(--bg);
 }
 .lb-play-mark svg {
-  width: 19px;
-  height: 19px;
+  width: 16px;
+  height: 16px;
   fill: currentColor;
   stroke: none;
   transform: translateX(1.25px);
@@ -1031,12 +1031,12 @@ body {
 .lb-stop {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   background: #de7356;
   color: #fff;
   border: none;
   border-radius: 999px;
-  padding: 6px 13px;
+  padding: 5px 13px 5px 6px;
   font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
@@ -1046,6 +1046,23 @@ body {
 }
 .lb-stop:hover:not(:disabled) {
   background: color-mix(in srgb, #de7356 86%, #fff);
+}
+.lb-stop-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  background: #fff;
+  color: #de7356;
+}
+.lb-stop-mark svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+  stroke: none;
 }
 .lb-collapsed .lb-stop {
   box-shadow:
@@ -2775,6 +2792,12 @@ body {
 .desktop .timeline-card .timeline {
   padding-inline: calc(var(--desktop-content-gutter) + 14px);
   scroll-padding-block: 8px;
+}
+.timeline-empty {
+  margin: 0;
+}
+.desktop .timeline-card .timeline-empty {
+  padding-inline: calc(var(--desktop-content-gutter) + 16px);
 }
 .tl-item {
   display: flex;

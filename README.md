@@ -85,7 +85,7 @@ code/config change before making it.
 ```bash
 pnpm install
 
-# Configure required model/tracing secrets in Secret Manager.
+# Configure required backend secrets in Firebase Secret Manager.
 # Secret names are defined by the Functions environment.
 
 # Build everything
@@ -130,7 +130,6 @@ Electron (macOS)                Firebase                         Model
 
 - Node 24, `pnpm`, and Firebase CLI v15+ (`npx firebase-tools`).
 - A Firebase project on the **Blaze** plan (Cloud Functions + Secret Manager require it).
-- A **model API key** and (optional) tracing credentials.
 
 ## Run the desktop capture app (macOS)
 
@@ -205,5 +204,7 @@ pnpm run deploy:functions
 
 - Model calls use per-role thinking settings; token usage (including thinking tokens) is tracked per
   call and aggregated per session, shown live in the UI.
-- See [`DESIGN.md`](DESIGN.md) for the design rationale and tradeoffs.
+- Chat model calls are traced from the server-side Functions path when tracing is configured, and
+  answer quality is evaluated with an LLM-as-judge check for whether the response matches the
+  user's question.
 - License: MIT.

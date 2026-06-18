@@ -16,8 +16,16 @@ export default defineConfig({
       { find: "@/firebase", replacement: path.resolve(e2e, "mocks/firebase.ts") },
       { find: "@/platform", replacement: path.resolve(e2e, "mocks/platform.ts") },
       {
+        find: path.resolve(src, "firebase"),
+        replacement: path.resolve(e2e, "mocks/firebase.ts"),
+      },
+      {
         find: path.resolve(src, "firebase.ts"),
         replacement: path.resolve(e2e, "mocks/firebase.ts"),
+      },
+      {
+        find: path.resolve(src, "platform"),
+        replacement: path.resolve(e2e, "mocks/platform.ts"),
       },
       {
         find: path.resolve(src, "platform.ts"),

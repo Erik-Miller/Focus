@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { ensureSignedIn, callables } from "../firebase";
-import { getBridge, type CaptureState } from "../platform";
+import { ensureSignedIn, callables } from "@/firebase";
+import { getBridge, type CaptureState } from "@/platform";
 import { MonitoringController, type LiveTimelineBatch, type MonitoringStatus } from "../monitoring";
 import {
   formatReportStartCountdown,
