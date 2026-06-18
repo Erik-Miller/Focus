@@ -31,6 +31,51 @@ Read more about the rationale for the work:
    and launch a prepared prompt in Claude Desktop or Claude CLI. Focus supplies the context; the
    separate agent does the building.
 
+## Run it
+
+### Agent setup prompt
+
+Use this prompt with Claude, Codex, or another coding agent when starting from a fresh checkout:
+
+```text
+You are helping set up the Focus repo on this machine. Work in the current repository.
+
+Please:
+1. Inspect README.md, package.json, firebase.json, functions/package.json, and .nvmrc before making
+   changes.
+2. Ensure Node 24 is active. If a version manager is available, use .nvmrc. If Node 24 is not
+   installed, tell me the exact install command for this machine and stop before making unrelated
+   changes.
+3. Ensure pnpm is available, and ensure Firebase CLI v15+ is available through either the global
+   firebase command or npx firebase-tools.
+4. Run pnpm install. Allow normal dependency and postinstall binary downloads, including Electron,
+   esbuild/tsup, Vite, and Firebase tooling. If a binary download is blocked by network, proxy,
+   cache, or permissions, report the failing package, URL or host if visible, and the command that
+   failed.
+5. Run pnpm build.
+6. Do not deploy, do not create or change secrets, and do not print secret values. If local model
+   credentials are already configured and I ask for the integration check, run:
+   pnpm --filter @focus/functions run validate
+   Otherwise skip validation and say credentials are required.
+7. If the desktop app needs to be smoke-tested on macOS, run pnpm dev:desktop and remind me to grant
+   Screen Recording and Accessibility permissions when prompted.
+8. Report the Node, pnpm, and Firebase CLI versions, the commands you ran, whether the build passed,
+   and any remaining blockers.
+
+Do not modify application code unless a setup or build failure requires a minimal fix. Explain any
+code/config change before making it.
+```
+
+```bash
+pnpm install
+
+# Configure required model/tracing secrets in Secret Manager.
+# Secret names are defined by the Functions environment.
+
+# Build everything
+pnpm build
+```
+
 ## Architecture
 
 ```
@@ -70,51 +115,6 @@ Electron (macOS)                Firebase                         Model
 - Node 24, `pnpm`, and Firebase CLI v15+ (`npx firebase-tools`).
 - A Firebase project on the **Blaze** plan (Cloud Functions + Secret Manager require it).
 - A **model API key** and (optional) tracing credentials.
-
-## Setup
-
-```bash
-pnpm install
-
-# Configure required model/tracing secrets in Secret Manager.
-# Secret names are defined by the Functions environment.
-
-# Build everything
-pnpm build
-```
-
-### Agent setup prompt
-
-Use this prompt with Claude, Codex, or another coding agent when starting from a fresh checkout:
-
-```text
-You are helping set up the Focus repo on this machine. Work in the current repository.
-
-Please:
-1. Inspect README.md, package.json, firebase.json, functions/package.json, and .nvmrc before making
-   changes.
-2. Ensure Node 24 is active. If a version manager is available, use .nvmrc. If Node 24 is not
-   installed, tell me the exact install command for this machine and stop before making unrelated
-   changes.
-3. Ensure pnpm is available, and ensure Firebase CLI v15+ is available through either the global
-   firebase command or npx firebase-tools.
-4. Run pnpm install. Allow normal dependency and postinstall binary downloads, including Electron,
-   esbuild/tsup, Vite, and Firebase tooling. If a binary download is blocked by network, proxy,
-   cache, or permissions, report the failing package, URL or host if visible, and the command that
-   failed.
-5. Run pnpm build.
-6. Do not deploy, do not create or change secrets, and do not print secret values. If local model
-   credentials are already configured and I ask for the integration check, run:
-   pnpm --filter @focus/functions run validate
-   Otherwise skip validation and say credentials are required.
-7. If the desktop app needs to be smoke-tested on macOS, run pnpm dev:desktop and remind me to grant
-   Screen Recording and Accessibility permissions when prompted.
-8. Report the Node, pnpm, and Firebase CLI versions, the commands you ran, whether the build passed,
-   and any remaining blockers.
-
-Do not modify application code unless a setup or build failure requires a minimal fix. Explain any
-code/config change before making it.
-```
 
 ## Run the desktop capture app (macOS)
 
