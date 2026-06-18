@@ -904,7 +904,7 @@ function Welcome({
       <div className="welcome-hero">
         <h2>
           <span>Discover New</span>
-          <span className="welcome-title-accent">Workflow And Automation Opportunities</span>
+          <span className="welcome-title-accent">Workflow And Automation</span>
         </h2>
         <p>{copy}</p>
         <div className="welcome-actions">
