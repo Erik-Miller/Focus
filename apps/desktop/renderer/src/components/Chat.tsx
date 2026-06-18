@@ -408,7 +408,7 @@ const AGENT_FIELD_LINE_PATTERN = new RegExp(
   "i",
 );
 
-function formatAgentMarkdown(content: string): string {
+export function formatAgentMarkdown(content: string): string {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   const formatted: string[] = [];
 

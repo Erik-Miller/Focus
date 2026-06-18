@@ -21,7 +21,7 @@ const CANCEL_POLL_MS = 400;
 
 type ChatRunStatus = "running" | "canceled" | "completed" | "failed";
 
-function cleanRunId(value: unknown): string {
+export function cleanRunId(value: unknown): string {
   const runId = typeof value === "string" ? value.trim() : "";
   if (!/^[A-Za-z0-9_-]{8,128}$/.test(runId)) {
     throw new HttpsError("invalid-argument", "Valid runId required.");

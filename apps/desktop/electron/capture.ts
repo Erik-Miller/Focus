@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { nativeImage, type NativeImage } from "electron";
+import { dHashImage, hamming } from "./imageHash.js";
+import { cursorCropRect } from "./crop.js";
 
 const exec = promisify(execFile);
 
@@ -66,17 +68,9 @@ export async function captureCursorCrop(
   display: { x: number; y: number; width: number; height: number },
   captureSize: number,
 ): Promise<CapturedCrop> {
-  const half = Math.floor(captureSize / 2);
-  const rx = Math.min(
-    Math.max(cursor.x - half, display.x),
-    display.x + display.width - captureSize,
-  );
-  const ry = Math.min(
-    Math.max(cursor.y - half, display.y),
-    display.y + display.height - captureSize,
-  );
+  const rect = cursorCropRect(cursor, display, captureSize);
 
-  const crop = await screencapture(["-x", `-R${rx},${ry},${captureSize},${captureSize}`]);
+  const crop = await screencapture(["-x", `-R${rect.x},${rect.y},${rect.width},${rect.height}`]);
   const result: CapturedCrop = {};
   if (crop) {
     result.cropImage = crop;
@@ -97,25 +91,8 @@ export async function captureFullScreen(): Promise<string | undefined> {
 
 /** Perceptual difference hash (dHash) of an image, as a 64-bit binary string. */
 export function dHash(img: NativeImage): string {
-  const small = img.resize({ width: 9, height: 8, quality: "good" });
-  const bmp = small.toBitmap(); // BGRA
-  const w = 9;
-  let bits = "";
-  for (let row = 0; row < 8; row++) {
-    for (let col = 0; col < 8; col++) {
-      const i = (row * w + col) * 4;
-      const j = (row * w + col + 1) * 4;
-      const left = bmp[i] + bmp[i + 1] + bmp[i + 2];
-      const right = bmp[j] + bmp[j + 1] + bmp[j + 2];
-      bits += left < right ? "1" : "0";
-    }
-  }
-  return bits;
+  return dHashImage(img);
 }
 
-export function hamming(a: string, b: string): number {
-  if (a.length !== b.length) return 64;
-  let d = 0;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
-  return d;
-}
+export { hamming };
+export { cursorCropRect };
