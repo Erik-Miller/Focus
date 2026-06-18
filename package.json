@@ -14,16 +14,34 @@
     "build:functions": "pnpm --filter @focus/shared run build && pnpm --filter @focus/functions run build",
     "dev:desktop": "pnpm --filter @focus/desktop run dev",
     "lint": "eslint . --ext .ts,.tsx",
+    "test": "pnpm run test:unit",
+    "test:unit": "vitest run --config vitest.config.ts --project shared --project functions --project electron --project renderer",
+    "test:rules": "firebase emulators:exec --only firestore,storage \"vitest run --config vitest.config.ts --project rules\"",
+    "test:e2e": "playwright test",
+    "test:ci": "pnpm run test:unit && pnpm run test:rules && pnpm run test:e2e",
+    "test:watch": "vitest --config vitest.config.ts",
+    "coverage": "vitest run --config vitest.config.ts --coverage --project shared --project functions --project electron --project renderer",
     "format": "prettier --write .",
     "deploy": "pnpm run build:functions && firebase deploy --only functions,firestore:rules,storage",
     "deploy:functions": "pnpm run build:functions && firebase deploy --only functions"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "@playwright/test": "^1.61.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^9.1.0",
+    "fake-indexeddb": "^6.2.5",
+    "firebase": "^12.6.0",
+    "firebase-tools": "^15.21.0",
+    "jsdom": "^29.1.1",
     "prettier": "^3.4.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   }
 }

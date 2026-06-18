@@ -20,6 +20,11 @@ interface StoredObservationImages extends LocalObservationImages {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+export function resetLocalObservationImagesForTest(): void {
+  void dbPromise?.then((db) => db.close()).catch(() => undefined);
+  dbPromise = null;
+}
+
 export function createClientObservationId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `obs_${crypto.randomUUID()}`;

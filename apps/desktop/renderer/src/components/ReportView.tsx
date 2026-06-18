@@ -99,7 +99,7 @@ export function ReportView({
   );
 }
 
-function compactFocusAreaTag(area: string): string {
+export function compactFocusAreaTag(area: string): string {
   let tag = area
     .trim()
     .replace(/\s+/g, " ")
@@ -136,7 +136,7 @@ function shortenTag(tag: string): string {
   return `${words.slice(0, 4).join(" ")}...`;
 }
 
-function formatReportNarrative(markdown: string): string {
+export function formatReportNarrative(markdown: string): string {
   const lines = markdown.trim().split(/\r?\n/);
   const firstContentIndex = lines.findIndex((line) => line.trim().length > 0);
   if (firstContentIndex === -1) return markdown;
@@ -183,7 +183,7 @@ function fieldReportHeadingFromReportHeading(line: string): string | null {
   return `${prefix}Field report${suffix ? `: ${suffix}` : ""}`;
 }
 
-function localizeTimelineMarkdown(markdown: string, observations: Observation[]): string {
+export function localizeTimelineMarkdown(markdown: string, observations: Observation[]): string {
   if (!markdown || observations.length === 0) return markdown;
   const byId = new Map(observations.map((observation) => [observation.id, observation]));
   return markdown

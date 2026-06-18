@@ -10,5 +10,6 @@
     "declarationMap": false,
     "types": ["node"]
   },
-  "include": ["electron/**/*", "tsup.config.ts"]
+  "include": ["electron/**/*", "tsup.config.ts"],
+  "exclude": ["electron/**/*.test.ts"]
 }

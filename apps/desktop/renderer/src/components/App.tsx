@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { ensureSignedIn, callables } from "../firebase";
 import { getBridge, type CaptureState } from "../platform";
 import { MonitoringController, type LiveTimelineBatch, type MonitoringStatus } from "../monitoring";
+import {
+  formatReportStartCountdown,
+  liveMonitoringPhaseFor,
+  monitoringLabelFor,
+} from "../appStatus";
 import type { Observation, Report, Session } from "@focus/shared";
 import {
   useChat,
@@ -18,7 +23,7 @@ import { ReportView } from "./ReportView";
 import { SessionList } from "./SessionList";
 import { AutomationInbox } from "./AutomationInbox";
 import { Button } from "@/components/ui/button";
-import { Launcher, ResizeHandles, type LiveMonitoringPhase } from "./DesktopLauncher";
+import { Launcher, ResizeHandles } from "./DesktopLauncher";
 import { SecondaryPage } from "./SecondaryPage";
 
 const SESSION_KEY = "focus.sessionId";
@@ -874,59 +879,12 @@ function ReportPendingCard({
   );
 }
 
-function formatReportStartCountdown(seconds: number | null, updating = false): string | null {
-  if (seconds === null) return null;
-  const label = updating ? "Update" : "Summary";
-  if (seconds <= 0) return `${label} starting...`;
-  return `${label} starts in ${formatCountdown(seconds)}`;
-}
-
-function formatCountdown(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
 function userTimeZone(): string | undefined {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch {
     return undefined;
   }
-}
-
-function monitoringLabelFor({
-  captureState,
-  monitoringStatus,
-  sessionUpdateInFlight,
-  stopping,
-}: {
-  captureState: CaptureState;
-  monitoringStatus: MonitoringStatus;
-  sessionUpdateInFlight: boolean;
-  stopping: boolean;
-}): string {
-  if (stopping) return "Stopping";
-  if (captureState === "capturing") return "Capturing";
-  if (monitoringStatus.phase === "analyzing" || sessionUpdateInFlight) return "Analyzing";
-  return "Monitoring";
-}
-
-function liveMonitoringPhaseFor({
-  captureState,
-  monitoringStatus,
-  sessionUpdateInFlight,
-  stopping,
-}: {
-  captureState: CaptureState;
-  monitoringStatus: MonitoringStatus;
-  sessionUpdateInFlight: boolean;
-  stopping: boolean;
-}): LiveMonitoringPhase {
-  if (stopping) return "stopping";
-  if (captureState === "capturing") return "capturing";
-  if (monitoringStatus.phase === "analyzing" || sessionUpdateInFlight) return "analyzing";
-  return "monitoring";
 }
 
 function Welcome({

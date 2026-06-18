@@ -6,13 +6,19 @@ import { app, BrowserWindow, clipboard, ipcMain, screen, shell, systemPreference
 import liquidGlass from "electron-liquid-glass";
 import { DEFAULT_MONITORING_CONFIG, type DwellInput, type Novelty } from "@focus/shared";
 import { DwellDetector } from "./dwell.js";
+import { captureCursorCrop, captureFullScreen, dHash, getActiveWindow } from "./capture.js";
+import { classifyNoveltyForSnapshot, shouldCaptureFullScreenSnapshot } from "./captureLogic.js";
 import {
-  captureCursorCrop,
-  captureFullScreen,
-  dHash,
-  hamming,
-  getActiveWindow,
-} from "./capture.js";
+  cleanAutomationInput,
+  shellQuote,
+  appleScriptString,
+  type AutomationLaunchInput,
+} from "./automationLaunch.js";
+import {
+  clamp,
+  computeInteractiveBoundsInWorkArea,
+  preservePositionForSizeInWorkArea,
+} from "./windowGeometry.js";
 
 const cfg = DEFAULT_MONITORING_CONFIG;
 const isDev = process.env.FOCUS_DEV === "1";
@@ -20,10 +26,11 @@ const execFileAsync = promisify(execFile);
 const APP_ICON_PATH = path.resolve(__dirname, "..", "assets", "focus-icon-1024.png");
 const APP_DOCK_ICON_PATH = path.resolve(__dirname, "..", "assets", "focus-dock-icon-1024.png");
 
-// Focus is a frameless, transparent, always-on-top floating utility panel (a
-// "docklet"): renderer-owned chrome + CSS drag regions, native bounds animation
-// for collapsed/expanded states. It launches centered/open, then users can drag
-// and resize it while sizing persists across launches.
+// Focus is a frameless, transparent floating utility panel (a "docklet"):
+// renderer-owned chrome + CSS drag regions, native bounds animation for
+// collapsed/expanded states. It launches centered/open, then users can drag and
+// resize it while sizing persists across launches. It stays above other windows
+// only while monitoring is active.
 const DOCKLET_MIN_WIDTH = 370;
 const DOCKLET_MIN_HEIGHT = 71;
 const DEFAULT_WIDTH = 380;
@@ -43,7 +50,7 @@ interface WindowState {
 
 let win: BrowserWindow | null = null;
 
-let keepInFront = true;
+let keepInFrontWhileMonitoring = true;
 let windowMode: WindowMode = "full";
 let expandedHeight = DEFAULT_EXPANDED_HEIGHT;
 
@@ -63,13 +70,6 @@ const detector = new DwellDetector(cfg.dwellMs, cfg.dwellRadiusPx);
 let lastEmitted: { hash: string; app: string; title: string } = { hash: "", app: "", title: "" };
 let emittedSnapshotCount = 0;
 
-type AutomationTarget = "desktop" | "terminal";
-interface AutomationLaunchInput {
-  target: AutomationTarget;
-  title: string;
-  prompt: string;
-}
-
 function emitCaptureState(state: "idle" | "capturing") {
   win?.webContents.send("focus:capture-state", state);
 }
@@ -77,10 +77,6 @@ function emitCaptureState(state: "idle" | "capturing") {
 // ---------------------------------------------------------------------------
 // Geometry helpers
 // ---------------------------------------------------------------------------
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 function workAreaFor(bounds: Electron.Rectangle): Electron.Rectangle {
   return screen.getDisplayMatching(bounds).workArea;
@@ -97,35 +93,13 @@ function preservePositionForSize(
   width: number,
   height: number,
 ): Electron.Rectangle {
-  const work = workAreaFor(bounds);
-  const sourceCenterX = bounds.x + bounds.width / 2;
-  const sourceCenterY = bounds.y + bounds.height / 2;
-  const workCenterX = work.x + work.width / 2;
-  const workCenterY = work.y + work.height / 2;
-  const centerZoneWidth = work.width * CENTER_ZONE_FRACTION;
-  const centerZoneHeight = work.height * CENTER_ZONE_FRACTION;
-  const preserveCenterX = Math.abs(sourceCenterX - workCenterX) <= centerZoneWidth / 2;
-  const preserveCenterY = Math.abs(sourceCenterY - workCenterY) <= centerZoneHeight / 2;
-  const preserveRight = !preserveCenterX && sourceCenterX > workCenterX;
-  const preserveBottom = !preserveCenterY && sourceCenterY > workCenterY;
-  const rawX = preserveCenterX
-    ? Math.round(sourceCenterX - width / 2)
-    : preserveRight
-      ? bounds.x + bounds.width - width
-      : bounds.x;
-  const rawY = preserveCenterY
-    ? Math.round(sourceCenterY - height / 2)
-    : preserveBottom
-      ? bounds.y + bounds.height - height
-      : bounds.y;
-  const maxX = work.x + work.width - width;
-  const maxY = work.y + work.height - height;
-  return {
-    x: clamp(rawX, work.x, Math.max(work.x, maxX)),
-    y: clamp(rawY, work.y, Math.max(work.y, maxY)),
+  return preservePositionForSizeInWorkArea(
+    bounds,
     width,
     height,
-  };
+    workAreaFor(bounds),
+    CENTER_ZONE_FRACTION,
+  );
 }
 
 function clampBoundsWidth(bounds: Electron.Rectangle): Electron.Rectangle {
@@ -249,35 +223,23 @@ function setWindowMode(mode: WindowMode): void {
 // delta (in screen DIPs), enforcing the minimum size and the work area.
 function computeInteractiveBounds(dx: number, dy: number): Electron.Rectangle {
   const start = resizeStartBounds!;
-  const work = workAreaFor(start);
-  let x = start.x;
-  let y = start.y;
-  let width = start.width;
-  let height = start.height;
-
-  if (resizeDir.includes("e")) width = start.width + dx;
-  if (resizeDir.includes("w")) width = start.width - dx;
-  if (resizeDir.includes("s")) height = start.height + dy;
-  if (resizeDir.includes("n")) height = start.height - dy;
-
-  width = clamp(Math.round(width), DOCKLET_MIN_WIDTH, work.width);
-  height = clamp(Math.round(height), DOCKLET_MIN_HEIGHT, work.height);
-
-  // West/north grips move the opposite edge as the size changes.
-  if (resizeDir.includes("w")) x = start.x + start.width - width;
-  if (resizeDir.includes("n")) y = start.y + start.height - height;
-
-  x = clamp(Math.round(x), work.x, work.x + work.width - width);
-  y = clamp(Math.round(y), work.y, work.y + work.height - height);
-  return { x, y, width, height };
+  return computeInteractiveBoundsInWorkArea({
+    start,
+    resizeDir,
+    dx,
+    dy,
+    work: workAreaFor(start),
+    minWidth: DOCKLET_MIN_WIDTH,
+    minHeight: DOCKLET_MIN_HEIGHT,
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Always-on-top (keepInFront)
+// Always-on-top while monitoring
 // ---------------------------------------------------------------------------
 
 function applyKeepInFront(): void {
-  if (win && !win.isDestroyed()) win.setAlwaysOnTop(keepInFront);
+  if (win && !win.isDestroyed()) win.setAlwaysOnTop(keepInFrontWhileMonitoring && Boolean(pollTimer));
 }
 
 // ---------------------------------------------------------------------------
@@ -322,7 +284,7 @@ function createWindow() {
     resizable: true,
     hasShadow: true,
     acceptFirstMouse: true,
-    alwaysOnTop: keepInFront,
+    alwaysOnTop: false,
     roundedCorners: true,
     icon: APP_ICON_PATH,
     webPreferences: {
@@ -378,22 +340,11 @@ function applyAppIcon() {
 // ---------------------------------------------------------------------------
 
 function classifyNovelty(hash: string, appName: string, title: string): Novelty | "duplicate" {
-  const appChanged = appName !== lastEmitted.app;
-  const titleChanged = title !== lastEmitted.title;
-  const distance = lastEmitted.hash ? hamming(hash, lastEmitted.hash) : 64;
-
-  if (!appChanged && !titleChanged && distance < cfg.duplicateHashDistance) {
-    return "duplicate";
-  }
-  if (appChanged) return "high";
-  if (titleChanged || distance >= 14) return "medium";
-  return "low";
+  return classifyNoveltyForSnapshot(hash, appName, title, lastEmitted, cfg.duplicateHashDistance);
 }
 
 function shouldCaptureFullScreen(nextSnapshotNumber: number): boolean {
-  const cadence = cfg.fullScreenshotEverySnapshots;
-  if (cadence <= 0) return false;
-  return nextSnapshotNumber % cadence === 0;
+  return shouldCaptureFullScreenSnapshot(nextSnapshotNumber, cfg.fullScreenshotEverySnapshots);
 }
 
 async function onDwell() {
@@ -449,39 +400,19 @@ function startCapture() {
       void onDwell();
     }
   }, cfg.pollIntervalMs);
+  applyKeepInFront();
 }
 
 function stopCapture() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+  applyKeepInFront();
   if (capturing) emitCaptureState("idle");
 }
 
 // ---------------------------------------------------------------------------
 // Automation handoff
 // ---------------------------------------------------------------------------
-
-function cleanAutomationInput(input: Partial<AutomationLaunchInput>): AutomationLaunchInput {
-  const target = input.target === "terminal" ? "terminal" : "desktop";
-  const title = String(input.title ?? "Automation candidate")
-    .trim()
-    .slice(0, 160);
-  const prompt = String(input.prompt ?? "").trim();
-  if (!prompt) throw new Error("Automation prompt is empty.");
-  return {
-    target,
-    title: title || "Automation candidate",
-    prompt: prompt.slice(0, 24_000),
-  };
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function appleScriptString(value: string): string {
-  return JSON.stringify(value);
-}
 
 function promptFilePath(): string {
   const name = `focus-claude-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
@@ -557,9 +488,9 @@ ipcMain.handle("focus:windowMode", (_event, mode: WindowMode) => {
   return true;
 });
 ipcMain.handle("focus:setKeepInFront", (_event, value: boolean) => {
-  keepInFront = Boolean(value);
+  keepInFrontWhileMonitoring = Boolean(value);
   applyKeepInFront();
-  return keepInFront;
+  return keepInFrontWhileMonitoring;
 });
 ipcMain.handle("focus:beginResize", (_event, dir: string) => {
   if (!win) return false;

@@ -160,22 +160,39 @@ then packages any repetitive follow-up work for a separate agent to build.
 
 ## Testing
 
-There is not a separate unit-test suite yet. Use the full build as the baseline check; it type-checks
-the shared package, builds the Functions bundle, builds the renderer, and builds the Electron shell.
+Automated tests are deterministic and do **not** call Gemini or Deep Agents. They require no model
+provider secrets; agent/model responses are mocked with fixed fixtures.
 
 ```bash
-pnpm build
+pnpm test:unit   # Vitest: shared logic, Functions helpers, Electron logic, renderer UI
+pnpm test:rules  # Firestore + Storage rules against local Firebase emulators
+pnpm test:e2e    # Playwright against the mocked Vite renderer harness
+pnpm test:ci     # Unit + rules + mocked e2e, no secrets required
+pnpm coverage    # Coverage for unit-test projects
+pnpm build       # Type-check and build shared, Functions, renderer, and Electron shell
 ```
 
-For an end-to-end check of the agent/model integration, export the model API key expected by your
-local Functions config, then run:
+Coverage thresholds are enforced per layer: shared and Functions logic target 90% statements and
+branches; renderer and Electron logic target 80%.
+
+For an optional manual check of the live agent/model integration, provide the Gemini secret value to
+the validation script in your shell, then run:
 
 ```bash
+GEMINI_API_KEY=... \
 pnpm --filter @focus/functions run validate
 ```
 
-For capture behavior, run the desktop app and do a short manual session to confirm macOS permissions,
-dwell capture, live awareness updates, chat, report generation, and Workflow Inbox handoff.
+That validation script is intentionally separate from `pnpm test:*` because it calls the live
+provider API and can depend on quota, network, and credentials.
+
+For native macOS capture behavior, run the desktop app and do a short manual smoke session:
+
+1. Grant **Screen Recording** and **Accessibility** to Electron when prompted.
+2. Start monitoring and confirm real cursor crops/full-screen context frames appear in the timeline.
+3. Confirm active app/window metadata is captured.
+4. Stop monitoring and confirm the report flow starts from the real desktop app.
+5. Save a workflow candidate and confirm Claude Desktop/CLI handoff copies/sends the prompt.
 
 ## Deploy
 

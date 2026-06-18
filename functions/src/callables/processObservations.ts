@@ -233,7 +233,7 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
   }
 });
 
-function observationId(sessionId: string, dwell: DwellInput): string {
+export function observationId(sessionId: string, dwell: DwellInput): string {
   const clientId = cleanClientObservationId(dwell.clientObservationId);
   if (clientId) return clientId;
 
@@ -251,13 +251,13 @@ function observationId(sessionId: string, dwell: DwellInput): string {
   return createHash("sha256").update(stable).digest("hex").slice(0, 32);
 }
 
-function cleanClientObservationId(value: unknown): string | null {
+export function cleanClientObservationId(value: unknown): string | null {
   const id = typeof value === "string" ? value.trim() : "";
   if (!/^[A-Za-z0-9_-]{8,96}$/.test(id)) return null;
   return id;
 }
 
-function activityForObservations(observations: DwellInput[]): string {
+export function activityForObservations(observations: DwellInput[]): string {
   const count = observations.length;
   const latest = observations[count - 1];
   const app = latest?.app?.trim();
@@ -265,7 +265,7 @@ function activityForObservations(observations: DwellInput[]): string {
   return `Captured ${count} new moments.`;
 }
 
-function reasoningActivity(count: number): string {
+export function reasoningActivity(count: number): string {
   return count === 1
     ? "Agent is analyzing 1 new moment."
     : `Agent is analyzing ${count} new moments.`;

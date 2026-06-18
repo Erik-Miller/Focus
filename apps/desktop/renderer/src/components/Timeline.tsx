@@ -140,7 +140,7 @@ interface TimelineEntry {
   summary: string;
 }
 
-function buildTimelineEntries(
+export function buildTimelineEntries(
   observations: Observation[],
   liveBatches: LiveTimelineBatch[],
 ): TimelineEntry[] {
@@ -426,7 +426,7 @@ function useLocalObservationImages(
   return images;
 }
 
-function thumbnailUrlForObservation(
+export function thumbnailUrlForObservation(
   observation: TimelineObservation,
   localImages: Map<string, LocalObservationImages>,
 ): string {
@@ -442,7 +442,7 @@ function thumbnailUrlForObservation(
   );
 }
 
-function trayImageUrlForObservation(
+export function trayImageUrlForObservation(
   observation: TimelineObservation,
   localImages: Map<string, LocalObservationImages>,
 ): string {
