@@ -7,9 +7,12 @@ import {
   fileContent,
   formatTimestampForTimeZone,
   isGeminiQuotaError,
+  OBSERVATION_INGEST_CALLABLE_OPTS,
   observationsDigest,
   recordUsage,
   requireAuth,
+  SESSION_CALLABLE_OPTS,
+  storagePathFromDownloadUrl,
   toAgentHttpsError,
 } from "./common.js";
 import type { Observation, TokenUsage } from "@focus/shared";
@@ -56,6 +59,9 @@ describe("callable common helpers", () => {
 
     expect(observationsDigest(observations)).toContain("2026-01-02T15:04:00.000Z");
     expect(observationsDigest(observations, "America/Chicago")).toContain("(America/Chicago)");
+    expect(observationsDigest([{ ...observations[0], summary: "", inferredIntent: "" }])).toContain(
+      "Unanalyzed high dwell (300ms, no screenshot).",
+    );
   });
 
   it("cleans timezone input and reads agent file content safely", () => {
@@ -68,6 +74,21 @@ describe("callable common helpers", () => {
     expect(fileContent({}, "/missing.md")).toBe("");
   });
 
+  it("extracts storage paths from Firebase download references", () => {
+    expect(
+      storagePathFromDownloadUrl(
+        "https://firebasestorage.googleapis.com/v0/b/focus-test.appspot.com/o/screenshots%2Fsession1%2Fobs1-crop?alt=media&token=abc",
+      ),
+    ).toBe("screenshots/session1/obs1-crop");
+    expect(storagePathFromDownloadUrl("gs://focus-test.appspot.com/screenshots/session1/obs1-crop")).toBe(
+      "screenshots/session1/obs1-crop",
+    );
+    expect(storagePathFromDownloadUrl("screenshots/session1/obs1-crop")).toBe(
+      "screenshots/session1/obs1-crop",
+    );
+    expect(storagePathFromDownloadUrl("https://example.com/nope")).toBeNull();
+  });
+
   it("builds the empty usage aggregate shape", () => {
     expect(emptyUsageAggregate()).toMatchObject({
       inputTokens: 0,
@@ -78,6 +99,21 @@ describe("callable common helpers", () => {
         report: { callCount: 0 },
       },
     });
+  });
+
+  it("keeps session bookkeeping callables lightweight", () => {
+    expect(SESSION_CALLABLE_OPTS).toMatchObject({
+      memory: "256MiB",
+      timeoutSeconds: 30,
+      region: "us-central1",
+    });
+    expect(SESSION_CALLABLE_OPTS).not.toHaveProperty("secrets");
+    expect(OBSERVATION_INGEST_CALLABLE_OPTS).toMatchObject({
+      memory: "512MiB",
+      timeoutSeconds: 120,
+      region: "us-central1",
+    });
+    expect(OBSERVATION_INGEST_CALLABLE_OPTS).not.toHaveProperty("secrets");
   });
 
   it("persists usage event and session aggregate increments", async () => {

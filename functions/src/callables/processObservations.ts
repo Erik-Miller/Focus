@@ -12,13 +12,16 @@ import { runMonitoring, type BatchObservationInput } from "../agent/runAgent.js"
 import {
   CALLABLE_OPTS,
   HYPOTHESIS_PATH,
+  OBSERVATION_INGEST_CALLABLE_OPTS,
   WORKFLOWS_PATH,
   configureEnv,
+  downloadStorageImageAsDataUrl,
   fileContent,
   agentErrorMessage,
   loadSession,
   recordUsage,
   requireAuth,
+  storagePathFromDownloadUrl,
   toAgentHttpsError,
   uploadDataUrl,
 } from "./common.js";
@@ -26,21 +29,57 @@ import {
 // A run holding the interpretation lock longer than this is treated as dead
 // (timed out / crashed before releasing) and the lock is reclaimed.
 const STALE_LOCK_MS = 120_000;
-// How many recent still-"Analyzing" moments a winning run folds its
-// interpretation into, so moments saved while the lock was held don't stay
-// pending forever.
-const PENDING_SWEEP_LIMIT = 40;
+export const SYNTHESIS_BATCH_SIZE = 8;
+
+type SynthesisReason = "timer" | "stop";
+
+interface IngestResult {
+  persisted: number;
+  observationIds: string[];
+}
+
+interface SynthesisResult {
+  ok: true;
+  interpreted: boolean;
+  observationCount: number;
+  currentIntent?: string;
+  confidence?: number;
+  reason?: string;
+}
 
 /**
  * Two-phase monitoring loop:
  *
- * 1. Always persist the raw dwell observations immediately so the attention
- *    timeline fills on every call, decoupled from the slow agent run.
- * 2. Try to claim a per-session lock for the expensive agent interpretation.
- *    If another run holds it, the observations are already saved, so we just
- *    skip the interpretation (no work and no moments are ever lost). A stale
- *    lock left by a crashed/timed-out run is reclaimed automatically.
+ * 1. ingestObservations persists raw dwell observations immediately so the
+ *    attention timeline fills quickly and independently.
+ * 2. synthesizePendingObservations claims a per-session lock and interprets the
+ *    oldest unsummarized batch. The hypothesis remains single-writer even when
+ *    ingest calls run in parallel.
+ * 3. processObservations remains as a compatibility wrapper for older clients.
  */
+export const ingestObservations = onCall(OBSERVATION_INGEST_CALLABLE_OPTS, async (request) => {
+  requireAuth(request);
+  const sessionId = request.data?.sessionId as string;
+  const observations = (request.data?.observations as DwellInput[]) ?? [];
+  if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
+  if (observations.length === 0) {
+    return { ok: true, persisted: 0, observationIds: [] };
+  }
+
+  const result = await persistRawObservations(sessionId, observations);
+  return { ok: true, ...result };
+});
+
+export const synthesizePendingObservations = onCall(CALLABLE_OPTS, async (request) => {
+  requireAuth(request);
+  const sessionId = request.data?.sessionId as string;
+  if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
+  return synthesizePendingObservationBatch(
+    sessionId,
+    cleanSynthesisReason(request.data?.reason),
+  );
+});
+
 export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
   requireAuth(request);
   const sessionId = request.data?.sessionId as string;
@@ -48,29 +87,35 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
   if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
   if (observations.length === 0) return { skipped: true, reason: "empty-batch" };
 
-  const ref = db.collection("sessions").doc(sessionId);
-  const { session } = await loadSession(sessionId);
+  const ingest = await persistRawObservations(sessionId, observations);
+  const synthesis = await synthesizePendingObservationBatch(sessionId, "timer");
+  return {
+    ...synthesis,
+    persisted: ingest.persisted,
+    observationIds: ingest.observationIds,
+  };
+});
+
+export async function persistRawObservations(
+  sessionId: string,
+  observations: DwellInput[],
+): Promise<IngestResult> {
+  const { ref } = await loadSession(sessionId);
   const batchId = randomUUID();
 
-  // --- Phase 1: persist raw observations + screenshots immediately. ---
   const obsDocs: Observation[] = [];
-  const agentInputs: BatchObservationInput[] = [];
 
   for (const dwell of observations) {
     const obsId = observationId(sessionId, dwell);
+    const fullPath = `screenshots/${sessionId}/${obsId}-full`;
+    const cropPath = `screenshots/${sessionId}/${obsId}-crop`;
     let fullUrl: string | undefined;
     let cropUrl: string | undefined;
     if (dwell.fullScreenshotDataUrl) {
-      fullUrl = await uploadDataUrl(
-        `screenshots/${sessionId}/${obsId}-full`,
-        dwell.fullScreenshotDataUrl,
-      );
+      fullUrl = await uploadDataUrl(fullPath, dwell.fullScreenshotDataUrl);
     }
     if (dwell.cursorCropDataUrl) {
-      cropUrl = await uploadDataUrl(
-        `screenshots/${sessionId}/${obsId}-crop`,
-        dwell.cursorCropDataUrl,
-      );
+      cropUrl = await uploadDataUrl(cropPath, dwell.cursorCropDataUrl);
     }
     const obsDoc: Observation = {
       id: obsId,
@@ -92,19 +137,15 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
     };
     // Only attach screenshot URLs when a capture succeeded; undefined values are
     // fine now that Firestore is configured with ignoreUndefinedProperties.
-    if (fullUrl) obsDoc.fullScreenshotUrl = fullUrl;
-    if (cropUrl) obsDoc.cursorCropUrl = cropUrl;
+    if (fullUrl) {
+      obsDoc.fullScreenshotUrl = fullUrl;
+      obsDoc.fullScreenshotPath = fullPath;
+    }
+    if (cropUrl) {
+      obsDoc.cursorCropUrl = cropUrl;
+      obsDoc.cursorCropPath = cropPath;
+    }
     obsDocs.push(obsDoc);
-    agentInputs.push({
-      obsId,
-      app: dwell.app,
-      windowTitle: dwell.windowTitle,
-      dwellMs: dwell.dwellMs,
-      novelty: dwell.novelty,
-      timestamp: dwell.timestamp,
-      fullScreenshotDataUrl: dwell.fullScreenshotDataUrl,
-      cursorCropDataUrl: dwell.cursorCropDataUrl,
-    });
   }
 
   const rawBatch = db.batch();
@@ -117,31 +158,39 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
     agentActivityAt: Date.now(),
   });
 
-  // --- Phase 2: claim the interpretation lock (reclaiming a stale one). ---
+  return {
+    persisted: obsDocs.length,
+    observationIds: obsDocs.map((obs) => obs.id),
+  };
+}
+
+export async function synthesizePendingObservationBatch(
+  sessionId: string,
+  _reason: SynthesisReason,
+): Promise<SynthesisResult> {
+  const { ref } = await loadSession(sessionId);
   const now = Date.now();
-  const claimed = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists) throw new HttpsError("not-found", "Session not found.");
-    const data = snap.data() as Session;
-    const heldFresh = data.updateInFlight && now - (data.updateInFlightAt ?? 0) < STALE_LOCK_MS;
-    if (heldFresh) return false;
-    tx.update(ref, {
-      updateInFlight: true,
-      updateInFlightAt: now,
-      agentActivity: reasoningActivity(obsDocs.length),
-      agentActivityAt: now,
-      lastError: "",
-      lastErrorAt: 0,
-    });
-    return true;
-  });
+  const claimed = await claimSynthesisLock(ref, now);
 
   if (!claimed) {
-    // Observations are already saved; another run is interpreting. No data lost.
-    return { ok: true, interpreted: false, reason: "update-in-flight", persisted: obsDocs.length };
+    return { ok: true, interpreted: false, observationCount: 0, reason: "update-in-flight" };
   }
 
   try {
+    const pending = await loadPendingObservations(ref);
+    if (pending.length === 0) {
+      await releaseSynthesisLock(ref);
+      return { ok: true, interpreted: false, observationCount: 0, reason: "no-pending" };
+    }
+
+    await ref.update({
+      agentActivity: reasoningActivity(pending.length),
+      agentActivityAt: Date.now(),
+    });
+
+    const sessionSnap = await ref.get();
+    if (!sessionSnap.exists) throw new HttpsError("not-found", "Session not found.");
+    const session = sessionSnap.data() as Session;
     const apiKey = configureEnv();
     const startedAt = Date.now();
 
@@ -151,30 +200,19 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
       priorWorkflows: fileContent(session.agentFiles, WORKFLOWS_PATH),
       currentIntent: session.currentIntent,
       activeApps: session.activeApps,
-      observations: agentInputs,
+      observations: await Promise.all(pending.map(agentInputFromObservation)),
     });
     const update = directAddressUnderstanding(result.update);
     const usage = result.usage;
 
-    // Fold the interpretation into this batch plus any still-pending moments
-    // that were saved while the lock was held, so nothing stays "Analyzing".
-    const pendingSnap = await ref
-      .collection("observations")
-      .orderBy("timestamp", "desc")
-      .limit(PENDING_SWEEP_LIMIT)
-      .get();
-    const toEnrich = new Map<string, FirebaseFirestore.DocumentReference>();
-    for (const obs of obsDocs) toEnrich.set(obs.id, ref.collection("observations").doc(obs.id));
-    for (const doc of pendingSnap.docs) {
-      if (!(doc.data() as Observation).summary) toEnrich.set(doc.id, doc.ref);
-    }
-
     const enrichBatch = db.batch();
-    for (const docRef of toEnrich.values()) {
+    const observationSummary =
+      update.batchSummary || update.currentIntent || "Analyzed captured activity.";
+    for (const obs of pending) {
       enrichBatch.set(
-        docRef,
+        ref.collection("observations").doc(obs.id),
         {
-          summary: update.batchSummary,
+          summary: observationSummary,
           inferredIntent: update.currentIntent,
           confidence: update.confidence,
           evidence: update.evidence,
@@ -187,24 +225,29 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
     await enrichBatch.commit();
 
     const workflows: Workflow[] = update.discoveredWorkflows ?? [];
-    await ref.update({
-      status: "active",
-      currentIntent: update.currentIntent,
-      confidence: update.confidence,
-      activeApps: update.activeApps,
-      discoveredWorkflows: workflows,
-      agentFiles: {
-        ...session.agentFiles,
-        [HYPOTHESIS_PATH]: update.hypothesisMarkdown,
-        [WORKFLOWS_PATH]: update.workflowsMarkdown,
-      },
-      lastUpdateAt: Date.now(),
-      agentActivity: update.batchSummary || update.currentIntent || "Agent update complete.",
-      agentActivityAt: Date.now(),
-      lastError: "",
-      lastErrorAt: 0,
-      updateInFlight: false,
-      updateInFlightAt: 0,
+    await db.runTransaction(async (tx) => {
+      const cur = await tx.get(ref);
+      const status = (cur.data() as Session | undefined)?.status;
+      const sessionUpdate: Record<string, unknown> = {
+        currentIntent: update.currentIntent,
+        confidence: update.confidence,
+        activeApps: update.activeApps,
+        discoveredWorkflows: workflows,
+        agentFiles: {
+          ...session.agentFiles,
+          [HYPOTHESIS_PATH]: update.hypothesisMarkdown,
+          [WORKFLOWS_PATH]: update.workflowsMarkdown,
+        },
+        lastUpdateAt: Date.now(),
+        agentActivity: update.batchSummary || update.currentIntent || "Agent update complete.",
+        agentActivityAt: Date.now(),
+        lastError: "",
+        lastErrorAt: 0,
+        updateInFlight: false,
+        updateInFlightAt: 0,
+      };
+      if (status === "active") sessionUpdate.status = "active";
+      tx.update(ref, sessionUpdate);
     });
 
     await recordUsage(ref, "observation", usage, Date.now() - startedAt);
@@ -214,10 +257,10 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
       interpreted: true,
       currentIntent: update.currentIntent,
       confidence: update.confidence,
-      observationCount: obsDocs.length,
+      observationCount: pending.length,
     };
   } catch (err) {
-    console.error("processObservations failed", err);
+    console.error("synthesizePendingObservations failed", err);
     const callableErr = toAgentHttpsError(err);
     await ref
       .update({
@@ -231,7 +274,91 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
       .catch(() => undefined);
     throw callableErr;
   }
-});
+}
+
+async function claimSynthesisLock(
+  ref: FirebaseFirestore.DocumentReference,
+  now: number,
+): Promise<boolean> {
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Session not found.");
+    const data = snap.data() as Session;
+    const heldFresh = data.updateInFlight && now - (data.updateInFlightAt ?? 0) < STALE_LOCK_MS;
+    if (heldFresh) return false;
+    tx.update(ref, {
+      updateInFlight: true,
+      updateInFlightAt: now,
+      lastError: "",
+      lastErrorAt: 0,
+    });
+    return true;
+  });
+}
+
+async function releaseSynthesisLock(ref: FirebaseFirestore.DocumentReference): Promise<void> {
+  await ref.update({
+    updateInFlight: false,
+    updateInFlightAt: 0,
+  });
+}
+
+async function loadPendingObservations(
+  ref: FirebaseFirestore.DocumentReference,
+): Promise<Observation[]> {
+  const snap = await ref
+    .collection("observations")
+    .where("summary", "==", "")
+    .orderBy("timestamp", "asc")
+    .limit(SYNTHESIS_BATCH_SIZE)
+    .get();
+  return snap.docs.map((doc) => doc.data() as Observation);
+}
+
+export async function agentInputFromObservation(obs: Observation): Promise<BatchObservationInput> {
+  return {
+    obsId: obs.id,
+    app: obs.app,
+    windowTitle: obs.windowTitle,
+    dwellMs: obs.dwellMs,
+    novelty: obs.novelty,
+    timestamp: obs.timestamp,
+    fullScreenshotDataUrl: await observationImageDataUrl(
+      obs.fullScreenshotPath,
+      obs.fullScreenshotUrl,
+    ),
+    cursorCropDataUrl: await observationImageDataUrl(obs.cursorCropPath, obs.cursorCropUrl),
+  };
+}
+
+async function observationImageDataUrl(
+  storagePath: string | undefined,
+  downloadUrl: string | undefined,
+): Promise<string | undefined> {
+  const existingDataUrl = [storagePath, downloadUrl].find((value) => value?.startsWith("data:"));
+  if (existingDataUrl) return existingDataUrl;
+
+  const resolvedPath =
+    storagePath && !storagePath.startsWith("http") && !storagePath.startsWith("gs://")
+      ? storagePath
+      : storagePathFromDownloadUrl(storagePath ?? "") ??
+        storagePathFromDownloadUrl(downloadUrl ?? "");
+  if (!resolvedPath) return undefined;
+
+  try {
+    return await downloadStorageImageAsDataUrl(resolvedPath);
+  } catch (err) {
+    console.warn("Failed to load persisted observation image for synthesis", {
+      storagePath: resolvedPath,
+      err,
+    });
+    return undefined;
+  }
+}
+
+function cleanSynthesisReason(value: unknown): SynthesisReason {
+  return value === "stop" ? "stop" : "timer";
+}
 
 export function observationId(sessionId: string, dwell: DwellInput): string {
   const clientId = cleanClientObservationId(dwell.clientObservationId);

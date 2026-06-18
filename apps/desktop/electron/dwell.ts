@@ -11,6 +11,11 @@ export class DwellDetector {
     private readonly radiusPx: number,
   ) {}
 
+  reset(): void {
+    this.anchor = null;
+    this.fired = false;
+  }
+
   /** Returns true exactly once when a new dwell is confirmed. */
   tick(x: number, y: number, now: number): boolean {
     if (!this.anchor) {

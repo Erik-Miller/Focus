@@ -339,7 +339,7 @@ function applyAppIcon() {
 // Capture / dwell
 // ---------------------------------------------------------------------------
 
-function classifyNovelty(hash: string, appName: string, title: string): Novelty | "duplicate" {
+function classifyNovelty(hash: string, appName: string, title: string): Novelty {
   return classifyNoveltyForSnapshot(hash, appName, title, lastEmitted, cfg.duplicateHashDistance);
 }
 
@@ -358,11 +358,8 @@ async function onDwell() {
       captureCursorCrop(cursor, display, cfg.captureSize),
       getActiveWindow(),
     ]);
-    if (!cropDataUrl || !cropImage) return;
-
-    const hash = dHash(cropImage);
+    const hash = cropImage ? dHash(cropImage) : "capture-unavailable";
     const novelty = classifyNovelty(hash, activeWin.app, activeWin.title);
-    if (novelty === "duplicate") return;
 
     const nextSnapshotNumber = emittedSnapshotCount + 1;
     const fullDataUrl = shouldCaptureFullScreen(nextSnapshotNumber)
@@ -393,6 +390,8 @@ async function onDwell() {
 
 function startCapture() {
   if (pollTimer) return;
+  detector.reset();
+  lastEmitted = { hash: "", app: "", title: "" };
   emittedSnapshotCount = 0;
   pollTimer = setInterval(() => {
     const p = screen.getCursorScreenPoint();

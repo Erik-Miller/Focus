@@ -46,6 +46,25 @@ export const callables = {
       confidence?: number;
     }
   >(functions, "processObservations"),
+  ingestObservations: httpsCallable<
+    { sessionId: string; observations: unknown[] },
+    {
+      ok: boolean;
+      persisted: number;
+      observationIds: string[];
+    }
+  >(functions, "ingestObservations"),
+  synthesizePendingObservations: httpsCallable<
+    { sessionId: string; reason: "timer" | "stop" },
+    {
+      ok: boolean;
+      interpreted: boolean;
+      observationCount: number;
+      currentIntent?: string;
+      confidence?: number;
+      reason?: string;
+    }
+  >(functions, "synthesizePendingObservations"),
   chatWithAgent: httpsCallable<
     { sessionId: string; runId: string; message: string },
     { answer?: string; canceled?: boolean }

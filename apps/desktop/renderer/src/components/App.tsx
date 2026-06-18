@@ -233,17 +233,32 @@ export function App() {
     setStartingMonitoring(resumeId ? "resuming" : "starting");
     try {
       if (resumeId) {
-        try {
-          await callables.resumeSession({ sessionId: resumeId });
-          await beginMonitoring(resumeId);
-          return;
-        } catch (err) {
-          if (!isMissingSessionError(err)) throw err;
-          console.warn("stale session id could not be resumed; starting a new session", err);
+        await beginMonitoring(resumeId);
+        void callables.resumeSession({ sessionId: resumeId }).catch((err) => {
+          if (!isMissingSessionError(err)) {
+            console.error("resume session failed after local monitoring started", err);
+            return;
+          }
+          console.warn("stale session id could not be resumed", err);
+          const activeController = controllerRef.current;
+          activeController?.discard();
+          controllerRef.current = null;
+          controllerSessionIdRef.current = null;
+          dwellUnsubRef.current?.();
+          dwellUnsubRef.current = null;
+          captureStateUnsubRef.current?.();
+          captureStateUnsubRef.current = null;
+          if (captureIdleTimerRef.current) clearTimeout(captureIdleTimerRef.current);
+          void bridge.stopCapture();
+          setCaptureState("idle");
+          setMonitoringStatus({ phase: "idle", bufferCount: 0 });
+          setLocalMonitoringSessionId(null);
+          setLiveTimelineBatches([]);
           localStorage.removeItem(SESSION_KEY);
           setSessionId(null);
           viewedSessionIdRef.current = null;
-        }
+        });
+        return;
       }
 
       {
@@ -697,9 +712,9 @@ function ReportStatusCard({
         : reporting
           ? hasReportRecord
             ? hasLoadedReport
-              ? "The agent is updating this session summary. You can keep reviewing the current version."
-              : "The agent is updating this session summary. The current version is loading."
-            : "The agent is reviewing the attention timeline and writing the summary."
+              ? "The agent is finishing observation analysis before updating this summary."
+              : "The agent is finishing observation analysis before updating this summary. The current version is loading."
+            : "The agent is finishing observation analysis before writing the summary."
           : hasLoadedReport
             ? report!.updatedAt
               ? `Updated ${new Date(report!.updatedAt).toLocaleString([], reportDateFormat)}`
@@ -865,8 +880,8 @@ function ReportPendingCard({
     : countdownLabel && updating
       ? `${countdownLabel}. The current version remains available.`
       : hasReport
-        ? "The current version remains available while the agent amends it."
-        : "The agent is reviewing this session's attention timeline. This usually takes a few moments.";
+        ? "The current version remains available while the agent finishes analysis and amends it."
+        : "The agent is finishing observation analysis, then it will write the session summary.";
 
   return (
     <div className="report-pending" aria-live="polite">

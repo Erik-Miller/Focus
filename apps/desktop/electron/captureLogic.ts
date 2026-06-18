@@ -13,16 +13,14 @@ export function classifyNoveltyForSnapshot(
   title: string,
   lastEmitted: LastEmittedSnapshot,
   duplicateHashDistance: number,
-): Novelty | "duplicate" {
+): Novelty {
   const appChanged = appName !== lastEmitted.app;
   const titleChanged = title !== lastEmitted.title;
   const distance = lastEmitted.hash ? hamming(hash, lastEmitted.hash) : 64;
 
-  if (!appChanged && !titleChanged && distance < duplicateHashDistance) {
-    return "duplicate";
-  }
   if (appChanged) return "high";
   if (titleChanged || distance >= 14) return "medium";
+  if (distance < duplicateHashDistance) return "low";
   return "low";
 }
 

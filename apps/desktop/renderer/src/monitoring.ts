@@ -6,9 +6,10 @@ const ERROR_BACKOFF_MS = 2 * 60_000;
 const QUOTA_BACKOFF_MS = 10 * 60_000;
 const FINAL_FLUSH_RETRY_MS = 1_500;
 const FINAL_FLUSH_MAX_ATTEMPTS = 40;
+export const MAX_PARALLEL_INGESTS = 3;
 
 export type MonitoringPhase = "idle" | "buffering" | "analyzing";
-type FlushResult = "flushed" | "skipped" | "failed" | "deferred";
+type FlushResult = "flushed" | "failed";
 
 export interface MonitoringStatus {
   phase: MonitoringPhase;
@@ -42,18 +43,21 @@ export interface LiveTimelineBatch {
  * Client-side monitoring buffer (used by the desktop capture path).
  *
  * Decouples the high candidate-rate (fast 300ms dwells, already novelty-tagged
- * and deduped natively) from the much slower agent reasoning rate via fixed-size
- * batches and a single in-flight flush.
+ * natively) from the much slower agent reasoning rate via fixed-size batches,
+ * parallel raw ingest, and a single synthesis writer.
  */
 export class MonitoringController {
   private buffer: DwellInput[] = [];
   private interval: number;
-  private lastFlush = 0;
-  private flushing = false;
-  private flushPromise: Promise<FlushResult> | null = null;
-  private requireCurrentFlushInterpretation = false;
+  private lastSynthesis = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private analyzingBatch: LiveTimelineBatch | null = null;
+  private ingestingBatches = new Map<string, LiveTimelineBatch>();
+  private ingestPromises = new Set<Promise<FlushResult>>();
+  private ingestRetryUntil = 0;
+  private synthesizing = false;
+  private synthesisPromise: Promise<void> | null = null;
+  private pendingHighNovelty = false;
+  private stopping = false;
 
   constructor(
     private readonly sessionId: string,
@@ -66,32 +70,33 @@ export class MonitoringController {
   }
 
   start(): void {
-    this.lastFlush = Date.now();
+    this.stopping = false;
+    this.lastSynthesis = Date.now();
     this.emitStatus("idle");
-    this.timer = setInterval(() => void this.maybeFlush(false), 1000);
+    this.timer = setInterval(() => {
+      this.startAvailableIngests(false);
+      void this.maybeSynthesize(false, "timer");
+    }, 1000);
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
 
     let attempts = 0;
-    while (this.buffer.length > 0 || this.flushing) {
+    while (this.buffer.length > 0 || this.ingestPromises.size > 0) {
       attempts += 1;
-      const result = await this.maybeFlush(true, true);
-      if (result === "failed") break;
-      if (result === "deferred") {
-        if (attempts >= FINAL_FLUSH_MAX_ATTEMPTS) break;
-        await delay(FINAL_FLUSH_RETRY_MS);
-        continue;
-      }
-      if (result === "skipped" && !this.flushing && this.buffer.length === 0) break;
-      if (result === "skipped") {
-        if (attempts >= FINAL_FLUSH_MAX_ATTEMPTS) break;
+      if (attempts > FINAL_FLUSH_MAX_ATTEMPTS) break;
+      this.startAvailableIngests(true, true);
+      if (this.ingestPromises.size > 0) {
+        await Promise.race(Array.from(this.ingestPromises));
+      } else if (this.buffer.length > 0) {
         await delay(FINAL_FLUSH_RETRY_MS);
       }
     }
 
+    void this.maybeSynthesize(true, "stop");
     this.emitStatus("idle");
   }
 
@@ -99,20 +104,12 @@ export class MonitoringController {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.buffer = [];
-    this.analyzingBatch = null;
+    this.ingestingBatches.clear();
     this.emitLiveBatches();
     this.emitStatus("idle");
   }
 
   push(dwell: DwellInput): void {
-    if (!hasCursorCrop(dwell)) {
-      console.warn("Skipping dwell without cursor crop", {
-        app: dwell.app,
-        windowTitle: dwell.windowTitle,
-        timestamp: dwell.timestamp,
-      });
-      return;
-    }
     const captured: DwellInput = {
       ...dwell,
       clientObservationId: dwell.clientObservationId ?? createClientObservationId(),
@@ -122,10 +119,8 @@ export class MonitoringController {
     });
     this.buffer.push(captured);
     this.emitLiveBatches();
-    this.emitStatus("buffering");
-    if (this.buffer.length >= this.cfg.maxBatch) {
-      void this.maybeFlush(true);
-    }
+    this.emitStatusForCurrentState();
+    this.startAvailableIngests(false);
   }
 
   getLiveTimelineBatches(): LiveTimelineBatch[] {
@@ -144,19 +139,17 @@ export class MonitoringController {
       changed = true;
     }
 
-    if (this.analyzingBatch) {
-      const remaining = this.analyzingBatch.observations.filter((observation) => {
-        return !observationIds.has(observation.id);
-      });
+    for (const [id, batch] of this.ingestingBatches) {
+      const remaining = batch.observations.filter((observation) => !observationIds.has(observation.id));
       if (remaining.length === 0) {
-        this.analyzingBatch = null;
+        this.ingestingBatches.delete(id);
         changed = true;
-      } else if (remaining.length !== this.analyzingBatch.observations.length) {
-        this.analyzingBatch = {
-          ...this.analyzingBatch,
+      } else if (remaining.length !== batch.observations.length) {
+        this.ingestingBatches.set(id, {
+          ...batch,
           observations: remaining,
           updatedAt: Date.now(),
-        };
+        });
         changed = true;
       }
     }
@@ -164,76 +157,119 @@ export class MonitoringController {
     if (changed) this.emitLiveBatches();
   }
 
-  private async maybeFlush(force: boolean, requireInterpretation = false): Promise<FlushResult> {
-    if (this.flushing) {
-      if (requireInterpretation) this.requireCurrentFlushInterpretation = true;
-      return force && this.flushPromise ? this.flushPromise : "skipped";
-    }
-    if (this.buffer.length === 0) return "skipped";
-    if (!force && this.buffer.length < this.cfg.maxBatch) return "skipped";
-    const elapsed = Date.now() - this.lastFlush;
-    if (!force && elapsed < this.interval) return "skipped";
-
-    this.requireCurrentFlushInterpretation = requireInterpretation;
-    const flush = this.flushNextBatch();
-    this.flushPromise = flush;
-    try {
-      return await flush;
-    } finally {
-      if (this.flushPromise === flush) this.flushPromise = null;
+  private startAvailableIngests(force: boolean, ignoreBackoff = false): void {
+    if (!ignoreBackoff && Date.now() < this.ingestRetryUntil) return;
+    while (this.ingestPromises.size < MAX_PARALLEL_INGESTS) {
+      if (this.buffer.length === 0) break;
+      if (!force && this.buffer.length < this.cfg.maxBatch) break;
+      const batch = this.buffer.splice(0, this.cfg.maxBatch);
+      if (batch.length === 0) break;
+      this.startIngest(batch);
     }
   }
 
-  private async flushNextBatch(): Promise<FlushResult> {
-    const batch = this.buffer.splice(0, this.cfg.maxBatch);
-    const hadHigh = batch.some((d) => d.novelty === "high");
-    this.flushing = true;
-    this.analyzingBatch = liveBatchFromDwells(
-      `analyzing:${batch[0]?.clientObservationId ?? Date.now()}`,
-      "analyzing",
-      batch,
-    );
+  private startIngest(batch: DwellInput[]): void {
+    const id = `ingesting:${batch[0]?.clientObservationId ?? Date.now()}`;
+    this.pendingHighNovelty ||= batch.some((d) => d.novelty === "high");
+    this.ingestingBatches.set(id, liveBatchFromDwells(id, "analyzing", batch));
     this.emitLiveBatches();
-    this.emitStatus("analyzing", batch.length);
+    this.emitStatusForCurrentState(batch.length);
+
+    const ingest = this.ingestBatch(id, batch);
+    this.ingestPromises.add(ingest);
+    void ingest.finally(() => {
+      this.ingestPromises.delete(ingest);
+      this.emitStatusForCurrentState();
+      this.startAvailableIngests(false);
+    });
+  }
+
+  private async ingestBatch(id: string, batch: DwellInput[]): Promise<FlushResult> {
     try {
+      const mode = await this.sendIngestBatch(batch);
+      if (mode === "ingested" && !this.stopping) void this.maybeSynthesize(true, "timer");
+      return "flushed";
+    } catch (err) {
+      // Re-queue the batch, but do not hammer the callable when provider quota
+      // is exhausted or persistence is temporarily rejecting requests.
+      this.buffer.unshift(...batch);
+      this.ingestRetryUntil =
+        Date.now() +
+        (isQuotaError(err)
+          ? QUOTA_BACKOFF_MS
+          : Math.min(Math.max(this.interval * 1.5, ERROR_BACKOFF_MS), QUOTA_BACKOFF_MS));
+      console.error("ingestObservations failed", err);
+      return "failed";
+    } finally {
+      this.ingestingBatches.delete(id);
+      this.emitLiveBatches();
+      this.emitStatusForCurrentState();
+    }
+  }
+
+  private async sendIngestBatch(batch: DwellInput[]): Promise<"ingested" | "compat"> {
+    try {
+      await callables.ingestObservations({
+        sessionId: this.sessionId,
+        observations: batch,
+      });
+      return "ingested";
+    } catch (err) {
+      if (!isMissingCallableError(err)) throw err;
+      console.warn("ingestObservations unavailable; falling back to processObservations", err);
       const res = await callables.processObservations({
         sessionId: this.sessionId,
         observations: batch,
       });
-      this.lastFlush = Date.now();
       const data = res.data;
-      if (this.requireCurrentFlushInterpretation && data?.interpreted === false) {
-        this.analyzingBatch = null;
-        this.buffer.unshift(...batch);
-        return "deferred";
-      }
       if (data?.currentIntent && this.onResult) {
         this.onResult(data.currentIntent, data.confidence ?? 0);
       }
-      // Adaptive backoff: stable context slows down, novel context speeds up.
-      this.interval = hadHigh
-        ? this.cfg.minUpdateIntervalMs
-        : Math.min(this.interval * 1.5, this.cfg.idleBackoffMaxMs);
-      return "flushed";
+      return "compat";
+    }
+  }
+
+  private async maybeSynthesize(force: boolean, reason: "timer" | "stop"): Promise<void> {
+    if (this.synthesizing) return this.synthesisPromise ?? undefined;
+    const elapsed = Date.now() - this.lastSynthesis;
+    if (!force && elapsed < this.interval) return;
+
+    const synthesis = this.synthesize(reason);
+    this.synthesisPromise = synthesis;
+    this.synthesizing = true;
+    this.emitStatusForCurrentState();
+    try {
+      await synthesis;
+    } finally {
+      if (this.synthesisPromise === synthesis) this.synthesisPromise = null;
+      this.synthesizing = false;
+      this.emitStatusForCurrentState();
+    }
+  }
+
+  private async synthesize(reason: "timer" | "stop"): Promise<void> {
+    try {
+      const res = await callables.synthesizePendingObservations({
+        sessionId: this.sessionId,
+        reason,
+      });
+      const data = res.data;
+      this.lastSynthesis = Date.now();
+      if (data?.currentIntent && this.onResult) {
+        this.onResult(data.currentIntent, data.confidence ?? 0);
+      }
+      if (data?.interpreted) {
+        this.interval = this.pendingHighNovelty
+          ? this.cfg.minUpdateIntervalMs
+          : Math.min(this.interval * 1.5, this.cfg.idleBackoffMaxMs);
+        this.pendingHighNovelty = false;
+      }
     } catch (err) {
-      // Re-queue the batch, but do not hammer the callable when provider quota
-      // is exhausted or the model API is temporarily rejecting requests.
-      this.analyzingBatch = null;
-      this.buffer.unshift(...batch);
-      this.lastFlush = Date.now();
+      this.lastSynthesis = Date.now();
       this.interval = isQuotaError(err)
         ? QUOTA_BACKOFF_MS
         : Math.min(Math.max(this.interval * 1.5, ERROR_BACKOFF_MS), QUOTA_BACKOFF_MS);
-      console.error("processObservations failed", err);
-      return "failed";
-    } finally {
-      this.flushing = false;
-      this.requireCurrentFlushInterpretation = false;
-      this.emitLiveBatches();
-      this.emitStatus(this.buffer.length > 0 ? "buffering" : "idle");
-      if (this.buffer.length >= this.cfg.maxBatch) {
-        void this.maybeFlush(true);
-      }
+      console.error("synthesizePendingObservations failed", err);
     }
   }
 
@@ -245,13 +281,25 @@ export class MonitoringController {
     });
   }
 
+  private emitStatusForCurrentState(batchCount?: number): void {
+    const phase: MonitoringPhase =
+      this.synthesizing || this.ingestingBatches.size > 0
+        ? "analyzing"
+        : this.buffer.length > 0
+          ? "buffering"
+          : "idle";
+    this.emitStatus(phase, batchCount);
+  }
+
   private emitLiveBatches(): void {
     this.onLiveBatches?.(this.liveTimelineBatches());
   }
 
   private liveTimelineBatches(): LiveTimelineBatch[] {
     const batches: LiveTimelineBatch[] = [];
-    if (this.analyzingBatch?.observations.length) batches.push(this.analyzingBatch);
+    for (const batch of this.ingestingBatches.values()) {
+      if (batch.observations.length > 0) batches.push(batch);
+    }
     for (let index = 0; index < this.buffer.length; index += this.cfg.maxBatch) {
       const chunk = this.buffer.slice(index, index + this.cfg.maxBatch);
       if (chunk.length === 0) continue;
@@ -265,10 +313,6 @@ export class MonitoringController {
     }
     return batches;
   }
-}
-
-function hasCursorCrop(dwell: DwellInput): boolean {
-  return Boolean(dwell.cursorCropDataUrl);
 }
 
 function liveBatchFromDwells(
@@ -303,6 +347,12 @@ function isQuotaError(err: unknown): boolean {
   const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
   const message = typeof err === "object" && err && "message" in err ? String(err.message) : "";
   return code.includes("resource-exhausted") || /quota|too many requests|429/i.test(message);
+}
+
+function isMissingCallableError(err: unknown): boolean {
+  const code = typeof err === "object" && err && "code" in err ? String(err.code) : "";
+  const message = typeof err === "object" && err && "message" in err ? String(err.message) : "";
+  return code === "not-found" || code === "functions/not-found" || /not[- _]?found/i.test(message);
 }
 
 function delay(ms: number): Promise<void> {

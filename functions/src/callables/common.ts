@@ -19,6 +19,20 @@ export const CALLABLE_OPTS = {
   region: "us-central1" as const,
 };
 
+/** Lightweight callable options for session bookkeeping that does not run agents. */
+export const SESSION_CALLABLE_OPTS = {
+  timeoutSeconds: 30,
+  memory: "256MiB" as const,
+  region: "us-central1" as const,
+};
+
+/** Lightweight callable options for screenshot/observation persistence. */
+export const OBSERVATION_INGEST_CALLABLE_OPTS = {
+  timeoutSeconds: 120,
+  memory: "512MiB" as const,
+  region: "us-central1" as const,
+};
+
 /** Wire LangSmith tracing + Gemini key into the process env for this invocation. */
 export function configureEnv(): string {
   const langsmithKey = LANGSMITH_API_KEY.value();
@@ -121,14 +135,61 @@ export async function uploadDataUrl(path: string, dataUrl: string): Promise<stri
   )}?alt=media&token=${token}`;
 }
 
+/** Download a Storage object and present it in the data URL shape expected by image models. */
+export async function downloadStorageImageAsDataUrl(path: string): Promise<string> {
+  const file = bucket.file(path);
+  const [buffer] = await file.download();
+  let contentType = "image/jpeg";
+  try {
+    const [metadata] = await file.getMetadata();
+    if (typeof metadata.contentType === "string" && metadata.contentType) {
+      contentType = metadata.contentType;
+    }
+  } catch {
+    // The bytes are enough for the model; default JPEG matches our capture path.
+  }
+  return `data:${contentType};base64,${buffer.toString("base64")}`;
+}
+
+export function storagePathFromDownloadUrl(value: string): string | null {
+  const candidate = value.trim();
+  if (!candidate) return null;
+  if (candidate.startsWith("gs://")) {
+    const [, ...pathParts] = candidate.slice("gs://".length).split("/");
+    const path = pathParts.join("/");
+    return path || null;
+  }
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)) return candidate;
+
+  try {
+    const url = new URL(candidate);
+    if (url.hostname !== "firebasestorage.googleapis.com") return null;
+    const marker = "/o/";
+    const index = url.pathname.indexOf(marker);
+    if (index < 0) return null;
+    const encodedPath = url.pathname.slice(index + marker.length);
+    return decodeURIComponent(encodedPath) || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Build a compact text digest of observations for chat/report context. */
 export function observationsDigest(observations: Observation[], timeZone?: string): string {
   return observations
     .map(
       (o) =>
-        `- [${o.id}] ${observationTimeLabel(o.timestamp, timeZone)} | ${o.app} — ${o.windowTitle} | ${o.summary || o.inferredIntent}`,
+        `- [${o.id}] ${observationTimeLabel(o.timestamp, timeZone)} | ${o.app} — ${o.windowTitle} | ${observationDigestText(o)}`,
     )
     .join("\n");
+}
+
+function observationDigestText(observation: Observation): string {
+  const interpreted = observation.summary || observation.inferredIntent;
+  if (interpreted) return interpreted;
+  const imageState =
+    observation.cursorCropUrl || observation.fullScreenshotUrl ? "screenshot available" : "no screenshot";
+  return `Unanalyzed ${observation.novelty} dwell (${observation.dwellMs}ms, ${imageState}).`;
 }
 
 function observationTimeLabel(timestamp: number, timeZone?: string): string {
