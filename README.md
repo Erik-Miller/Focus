@@ -37,7 +37,6 @@ Read more about the rationale for the work:
 ### Prerequisites
 
 - Node 24, `pnpm`, and Firebase CLI v15+ (`npx firebase-tools`).
-- A Firebase project on the **Blaze** plan (Cloud Functions + Secret Manager require it).
 - Optional for automation handoff: install Claude Desktop and/or Claude Code CLI. Focus can save
   prompts to the Workflow Inbox without them, but the handoff buttons need the Claude Desktop app or
   a `claude` CLI command on PATH to open/send prompts to those platforms.
@@ -93,11 +92,10 @@ Do not modify application code unless a setup or build failure requires a minima
 code/config change before making it.
 ```
 
+### Manual setup
+
 ```bash
 pnpm install
-
-# Configure required backend secrets in Firebase Secret Manager.
-# Secret names are defined by the Functions environment.
 
 # Build everything
 pnpm build
@@ -226,6 +224,9 @@ For native macOS capture behavior, run the desktop app and do a short manual smo
    or Claude Code CLI is installed locally.
 
 ## Deploy
+
+Deploying backend updates requires a Firebase project on the **Blaze** plan because Cloud Functions
+and Secret Manager require it.
 
 ```bash
 pnpm run deploy          # functions + firestore rules + storage rules
