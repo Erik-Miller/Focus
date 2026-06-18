@@ -117,49 +117,40 @@ while the session report generates automatically.
 ## Architecture
 
 ```mermaid
-flowchart LR
-  subgraph electron["Electron (macOS)"]
-    dwell["Dwell detector"]
-    capture["250x250 crop + full frame"]
-    active["active-win via osascript"]
-    novelty["dHash novelty filter"]
-    ui["React UI"]
-    handoff["Claude Desktop/CLI handoff"]
+%%{init: {"themeVariables": {"signalColor": "#ff8c00", "signalTextColor": "#ff8c00"}}}%%
+sequenceDiagram
+  actor FocusUser as Focus user
+  participant UI as React UI
+  participant Electron as Electron capture
+  participant Process as processObservations
+  participant Model as Agent harness + model
+  participant Firestore
+  participant Report as generateReport
+  participant Save as saveWorkflowForLater
+  participant Inbox as Workflow Inbox
+  FocusUser->>UI: Start Focus
+  UI->>Electron: Start monitoring
+  loop Until monitoring stops
+    Electron->>Electron: Detect dwell, capture screen, read active app/title, filter novelty
+    Electron->>Process: Send observation metadata + images
+    Process->>Model: Analyze observations
+    Model-->>Process: Structured output + usage
+    Process->>Firestore: Save awareness, timeline, observations, usage
+    Firestore-->>UI: onSnapshot updates awareness + timeline
   end
-
-  subgraph firebase["Firebase"]
-    process["processObservations"]
-    chat["chatWithAgent"]
-    report["generateReport"]
-    save["saveWorkflowForLater"]
-    firestore[(Firestore)]
-    inbox["Workflow Inbox"]
+  FocusUser->>UI: Stop Focus
+  UI->>Report: Generate session report
+  Report->>Model: Summarize session + workflow candidates
+  Model-->>Report: Report + usage
+  Report->>Firestore: Save report + usage
+  Firestore-->>UI: onSnapshot shows report
+  opt Focus user saves workflow
+    FocusUser->>UI: Save workflow
+    UI->>Save: Save automation prompt
+    Save->>Firestore: Save workflow
+    Firestore->>Inbox: Add to Workflow Inbox
+    Firestore-->>UI: onSnapshot updates inbox
   end
-
-  subgraph model["Model"]
-    harness["Agent harness"]
-    output["Structured output + usage"]
-  end
-
-  dwell -->|dwell events| process
-  capture --> process
-  active --> process
-  novelty --> process
-
-  ui -->|chat| chat
-  ui -->|report request| report
-  ui -->|saved automation prompts| handoff
-
-  process --> harness
-  chat --> harness
-  report --> harness
-  harness --> output
-
-  output --> firestore
-  output -->|automation candidate| save
-  save --> inbox
-  inbox --> firestore
-  firestore -->|onSnapshot: awareness, timeline, chat, reports, inbox| ui
 ```
 
 - **Electron** captures dwell moments locally and tags novelty with a perceptual hash before
