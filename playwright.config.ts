@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: {
     command: "pnpm --filter @focus/desktop-renderer run dev:e2e",
     url: "http://127.0.0.1:5174",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 60_000,
   },
 });

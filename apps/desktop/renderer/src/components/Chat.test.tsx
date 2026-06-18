@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   cancelChatRun: vi.fn(),
 }));
 
-vi.mock("../firebase", () => ({
+vi.mock("@/firebase", () => ({
   callables: {
     chatWithAgent: mocks.chatWithAgent,
     cancelChatRun: mocks.cancelChatRun,

@@ -18,7 +18,8 @@ test("mocked monitoring flow captures, stops, opens report, and cancels chat", a
   await page.getByRole("button", { name: "Send" }).click();
   const chatForm = page.locator(".chat-input");
   await expect(chatForm.getByRole("button", { name: "Stop" })).toBeVisible();
-  await chatForm.getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByText("Thinking")).toBeVisible();
+  await chatForm.getByRole("button", { name: "Stop" }).dispatchEvent("click");
   await expect(chatForm.getByRole("button", { name: "Send" })).toBeVisible();
   await expect(page.getByPlaceholder("Message...")).toBeEnabled();
 });

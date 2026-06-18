@@ -58,7 +58,9 @@ export function Launcher({
               </span>
             </span>
             <button className="lb-stop" onClick={onStop} disabled={disabled}>
-              <Square aria-hidden />
+              <span className="lb-stop-mark" aria-hidden>
+                <Square aria-hidden />
+              </span>
               <span>Stop</span>
             </button>
           </div>

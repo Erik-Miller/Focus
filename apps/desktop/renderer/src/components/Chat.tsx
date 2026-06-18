@@ -7,7 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import { directAddressText, type ChatMessage } from "@focus/shared";
-import { callables } from "../firebase";
+import { callables } from "@/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -79,6 +79,15 @@ export function Chat({
     activeRunRef.current = activeRun;
   }, [activeRun]);
 
+  function setActiveChatRun(nextRun: ActiveChatRun | null) {
+    activeRunRef.current = nextRun;
+    setActiveRun(nextRun);
+  }
+
+  function currentActiveRunId() {
+    return activeRunRef.current?.id;
+  }
+
   useEffect(() => {
     setPendingMessages([]);
   }, [sessionId]);
@@ -141,30 +150,27 @@ export function Chat({
         runId,
       },
     ]);
-    activeRunRef.current = run;
-    setActiveRun(run);
+    setActiveChatRun(run);
     try {
       await callables.chatWithAgent({ sessionId, runId, message });
     } catch (err) {
-      const currentRun = activeRunRef.current;
-      if (currentRun && currentRun.id === runId) console.error(err);
+      if (currentActiveRunId() === runId) console.error(err);
       setPendingMessages((current) => current.filter((message) => message.runId !== runId));
     } finally {
-      const currentRun = activeRunRef.current;
-      if (currentRun && currentRun.id === runId) setActiveRun(null);
+      if (currentActiveRunId() === runId) setActiveChatRun(null);
     }
   }
 
   async function stopActiveRun() {
     const run = activeRunRef.current;
     if (!run || run.phase === "stopping") return;
-    setActiveRun({ ...run, phase: "stopping" });
+    setActiveChatRun({ ...run, phase: "stopping" });
     try {
       await callables.cancelChatRun({ sessionId, runId: run.id });
-      if (activeRunRef.current?.id === run.id) setActiveRun(null);
+      if (currentActiveRunId() === run.id) setActiveChatRun(null);
     } catch (err) {
       console.error(err);
-      if (activeRunRef.current?.id === run.id) setActiveRun({ ...run, phase: "running" });
+      if (currentActiveRunId() === run.id) setActiveChatRun({ ...run, phase: "running" });
     }
   }
 

@@ -34,7 +34,7 @@ export function Timeline({
     return (
       <Card className="timeline-card gap-0 overflow-hidden py-0">
         <TimelineHeader count={0} usage={usage} />
-        <p className="empty">No observed moments yet.</p>
+        <p className="empty timeline-empty">No observed moments yet.</p>
       </Card>
     );
   }

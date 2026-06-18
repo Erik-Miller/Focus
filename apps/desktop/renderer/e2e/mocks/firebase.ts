@@ -12,9 +12,17 @@ export const savedWorkflows: SavedWorkflowInput[] = [];
 export const launches: Array<{ id: string; target: SavedWorkflowLaunchTarget }> = [];
 let pendingChatResolve: ((value: { data: { answer: string } }) => void) | null = null;
 
+declare global {
+  interface Window {
+    focusE2eCancelChat?: () => Promise<{ data: { ok: boolean } }>;
+  }
+}
+
 export function resetE2eFirebaseMocks(): void {
   savedWorkflows.length = 0;
   launches.length = 0;
+  pendingChatResolve?.({ data: { answer: "" } });
+  pendingChatResolve = null;
 }
 
 export const callables = {
@@ -30,15 +38,9 @@ export const callables = {
       confidence: 0.84,
     },
   }),
-  chatWithAgent: async ({ message }: { message: string }) =>
+  chatWithAgent: async () =>
     new Promise<{ data: { answer: string } }>((resolve) => {
       pendingChatResolve = resolve;
-      window.setTimeout(() => {
-        if (pendingChatResolve === resolve) {
-          pendingChatResolve = null;
-          resolve({ data: { answer: `You asked: ${message}` } });
-        }
-      }, 5_000);
     }),
   cancelChatRun: async () => {
     pendingChatResolve?.({ data: { answer: "" } });
@@ -62,6 +64,8 @@ export const callables = {
     return { data: { ok: true } };
   },
 };
+
+window.focusE2eCancelChat = async () => callables.cancelChatRun();
 
 export async function ensureSignedIn() {
   return { uid: "uid-e2e" };
