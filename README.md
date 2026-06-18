@@ -1,7 +1,7 @@
 # Focus
-<img width="830" height="668" alt="Screenshot 2026-06-17 at 6 53 57 PM" src="https://github.com/user-attachments/assets/188c923d-129b-4d66-b4ce-1ccab7f28b46" />
-
 **An agent that watches your attention, explains your work, and spots what to automate.**
+
+<img width="830" height="668" alt="Screenshot 2026-06-17 at 6 53 57 PM" src="https://github.com/user-attachments/assets/188c923d-129b-4d66-b4ce-1ccab7f28b46" />
 
 Focus is a quiet observer for your own work. During a real session it watches where your attention
 lands on screen, builds a live theory of what you're doing, and afterward tells you: here is what you
