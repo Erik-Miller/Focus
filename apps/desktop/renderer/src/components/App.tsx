@@ -705,16 +705,16 @@ function ReportStatusCard({
     ? "The current version stays available while final observations save."
     : preparing
       ? hasReportRecord
-        ? "Final observations are being analyzed before the summary update starts."
-        : "Final observations are being analyzed before the summary starts."
+        ? "The agent is finishing analysis of the recent session images before updating this summary."
+        : "The agent is finishing analysis of the recent session images before writing the summary."
       : reportQueued
         ? "Final observations are being saved before the summary starts."
         : reporting
           ? hasReportRecord
             ? hasLoadedReport
-              ? "The agent is finishing observation analysis before updating this summary."
-              : "The agent is finishing observation analysis before updating this summary. The current version is loading."
-            : "The agent is finishing observation analysis before writing the summary."
+              ? "The agent is finishing analysis of the recent session images before updating this summary."
+              : "The agent is finishing analysis of the recent session images before updating this summary. The current version is loading."
+            : "The agent is finishing analysis of the recent session images before writing the summary."
           : hasLoadedReport
             ? report!.updatedAt
               ? `Updated ${new Date(report!.updatedAt).toLocaleString([], reportDateFormat)}`
@@ -880,8 +880,8 @@ function ReportPendingCard({
     : countdownLabel && updating
       ? `${countdownLabel}. The current version remains available.`
       : hasReport
-        ? "The current version remains available while the agent finishes analysis and amends it."
-        : "The agent is finishing observation analysis, then it will write the session summary.";
+        ? "The current version remains available while the agent finishes analysis of the recent session images and updates this summary."
+        : "The agent is finishing analysis of the recent session images before writing the session summary.";
 
   return (
     <div className="report-pending" aria-live="polite">

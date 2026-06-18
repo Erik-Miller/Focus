@@ -75,7 +75,10 @@ Please:
    "Focus — attention-observing agent" opens. Remind me to grant Screen Recording and Accessibility
    permissions when prompted. If checking the renderer in a normal browser, "Connecting to Focus…"
    can be expected because the full app relies on Electron's preload bridge.
-10. Report the Node, pnpm, and Firebase CLI versions, the commands you ran, whether install/build/app
+10. If testing workflow handoff, confirm Claude Desktop and/or Claude Code CLI are installed locally.
+   Focus can save automation prompts without them, but opening/sending a prompt to Claude requires
+   the Claude Desktop app or a `claude` CLI command on PATH.
+11. Report the Node, pnpm, and Firebase CLI versions, the commands you ran, whether install/build/app
    launch passed, and any remaining blockers.
 
 Do not modify application code unless a setup or build failure requires a minimal fix. Explain any
@@ -114,8 +117,8 @@ Electron (macOS)                Firebase                         Model
   to the UI.
 - **Two‑speed loop:** monitoring is throttled + batched (medium thinking); chat is unthrottled
   (medium); the report uses high thinking. See `packages/shared/src/monitoringConfig.ts`.
-- **Workflow handoff:** Focus saves automation prompts and opens Claude Desktop/CLI, but the
-  automation work happens outside Focus.
+- **Workflow handoff:** Focus saves automation prompts and opens Claude Desktop/CLI when installed;
+  the automation work happens outside Focus.
 
 ## Repo layout
 
@@ -130,6 +133,9 @@ Electron (macOS)                Firebase                         Model
 
 - Node 24, `pnpm`, and Firebase CLI v15+ (`npx firebase-tools`).
 - A Firebase project on the **Blaze** plan (Cloud Functions + Secret Manager require it).
+- Optional for automation handoff: install Claude Desktop and/or Claude Code CLI. Focus can save
+  prompts to the Workflow Inbox without them, but the handoff buttons need the Claude Desktop app or
+  a `claude` CLI command on PATH to open/send prompts to those platforms.
 
 ## Run the desktop capture app (macOS)
 
@@ -151,8 +157,9 @@ A simple way to try the whole loop is a short news-browsing session:
    compare coverage, search, and switch between tabs.
 3. Press **Stop Focus** and wait for the session report to generate automatically.
 4. Review what Focus thinks you were doing, including any repeated workflows it noticed.
-5. If the report or Workflow Inbox includes an automation-ready workflow, click the Claude CLI
-   handoff to launch the prepared prompt immediately.
+5. If the report or Workflow Inbox includes an automation-ready workflow, click the Claude handoff to
+   launch the prepared prompt immediately. Claude Desktop or Claude Code CLI must be installed for
+   those handoff buttons to open/send the prompt.
 
 This shows the intended shape of the product: Focus observes and explains the browsing workflow,
 then packages any repetitive follow-up work for a separate agent to build.
@@ -191,7 +198,8 @@ For native macOS capture behavior, run the desktop app and do a short manual smo
 2. Start monitoring and confirm real cursor crops/full-screen context frames appear in the timeline.
 3. Confirm active app/window metadata is captured.
 4. Stop monitoring and confirm the report flow starts from the real desktop app.
-5. Save a workflow candidate and confirm Claude Desktop/CLI handoff copies/sends the prompt.
+5. Save a workflow candidate and confirm Claude handoff copies/sends the prompt when Claude Desktop
+   or Claude Code CLI is installed locally.
 
 ## Deploy
 
