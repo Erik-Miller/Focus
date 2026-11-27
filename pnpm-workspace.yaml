@@ -1,0 +1,13 @@
+packages:
+  - "packages/*"
+  - "functions"
+  - "apps/*"
+  - "apps/desktop/renderer"
+
+overrides:
+  "@langchain/core": "1.5.1"
+
+# Required install scripts: Electron downloads its runtime; esbuild verifies its binary.
+allowBuilds:
+  electron: true
+  esbuild: true

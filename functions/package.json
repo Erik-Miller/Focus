@@ -1,0 +1,33 @@
+{
+  "name": "@focus/local-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "24"
+  },
+  "scripts": {
+    "build": "tsc --noEmit && tsup",
+    "build:watch": "tsup --watch",
+    "validate": "node --import tsx scripts/validateAgent.ts"
+  },
+  "dependencies": {
+    "@focus/shared": "workspace:*",
+    "@langchain/anthropic": "1.4.0",
+    "@langchain/core": "^1.5.1",
+    "@langchain/google-genai": "^2.1.31",
+    "@langchain/openai": "^1.8.5",
+    "deepagents": "^1.10.2",
+    "sql.js": "^1.17.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/sql.js": "^1.4.9",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "types": "lib/index.d.ts"
+}

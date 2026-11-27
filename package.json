@@ -1,0 +1,42 @@
+{
+  "name": "focus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Focus — a Deep Agent that observes moments of attention and builds an understanding of your work.",
+  "license": "MIT",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "pnpm run build:desktop",
+    "build:desktop": "pnpm --filter @focus/shared run build && pnpm --filter @focus/local-service run build && pnpm --filter @focus/desktop run build",
+    "dev:desktop": "pnpm --filter @focus/shared run build && pnpm --filter @focus/local-service run build && pnpm --filter @focus/desktop run dev",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "pnpm run test:unit",
+    "test:unit": "vitest run --config vitest.config.ts --project shared --project functions --project electron --project renderer",
+    "test:e2e": "playwright test",
+    "test:ci": "pnpm run test:unit && pnpm run test:e2e",
+    "test:watch": "vitest --config vitest.config.ts",
+    "coverage": "vitest run --config vitest.config.ts --coverage --project shared --project functions --project electron --project renderer",
+    "format": "prettier --write .",
+    "build:local": "pnpm --filter @focus/shared run build && pnpm --filter @focus/local-service run build",
+    "check:privacy": "node scripts/check-privacy.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  }
+}

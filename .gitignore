@@ -1,0 +1,45 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+functions/lib/
+out/
+build/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.*
+!.env.example
+functions/.env.local
+functions/.env.*.local
+*.key
+*.pem
+service-account*.json
+
+ui-debug.log
+*-debug.log
+
+# electron
+apps/desktop/release/
+dist-electron/
+
+# misc
+.DS_Store
+*.log
+.vite/
+coverage/
+
+# Local user data and test captures must never be published
+local-data/
+focus-credentials.json
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.playwright-cli/
+playwright-report/
+test-results/
+output/
