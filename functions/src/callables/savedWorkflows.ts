@@ -1,23 +1,17 @@
 import { createHash } from "node:crypto";
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { localOperation, LocalError } from "../localCall.js";
 import {
   saveWorkflowForLaterInputSchema,
   savedWorkflowLaunchTargetSchema,
   type SavedWorkflow,
 } from "@focus/shared";
-import { db } from "../firebaseApp.js";
+import { db } from "../localStore.js";
 import { requireAuth } from "./common.js";
-
-const SAVED_WORKFLOW_OPTS = {
-  timeoutSeconds: 60,
-  memory: "256MiB" as const,
-  region: "us-central1" as const,
-};
 
 const MAX_PROMPT_LENGTH = 100_000;
 const MAX_TITLE_LENGTH = 240;
 
-export const saveWorkflowForLater = onCall(SAVED_WORKFLOW_OPTS, async (request) => {
+export const saveWorkflowForLater = localOperation(async (request) => {
   const uid = requireAuth(request);
   return saveWorkflowForUser(uid, request.data);
 });
@@ -25,15 +19,15 @@ export const saveWorkflowForLater = onCall(SAVED_WORKFLOW_OPTS, async (request) 
 export async function saveWorkflowForUser(uid: string, value: unknown): Promise<{ id: string }> {
   const parsed = saveWorkflowForLaterInputSchema.safeParse(value);
   if (!parsed.success) {
-    throw new HttpsError("invalid-argument", "Valid saved workflow input required.");
+    throw new LocalError("invalid-argument", "Valid saved workflow input required.");
   }
 
   const input = parsed.data;
   if (!input.workflow.automatable || !input.workflow.automationIdea.trim()) {
-    throw new HttpsError("invalid-argument", "Only automatable workflows can be saved.");
+    throw new LocalError("invalid-argument", "Only automatable workflows can be saved.");
   }
   if (input.prompt.length > MAX_PROMPT_LENGTH) {
-    throw new HttpsError("invalid-argument", "Automation prompt is too large to save.");
+    throw new LocalError("invalid-argument", "Automation prompt is too large to save.");
   }
 
   const id = savedWorkflowId(input);
@@ -63,21 +57,21 @@ export async function saveWorkflowForUser(uid: string, value: unknown): Promise<
   return { id };
 }
 
-export const deleteSavedWorkflow = onCall(SAVED_WORKFLOW_OPTS, async (request) => {
+export const deleteSavedWorkflow = localOperation(async (request) => {
   const uid = requireAuth(request);
   const id = cleanDocId(request.data?.id);
-  if (!id) throw new HttpsError("invalid-argument", "Valid saved workflow id required.");
+  if (!id) throw new LocalError("invalid-argument", "Valid saved workflow id required.");
 
   await db.collection("users").doc(uid).collection("savedWorkflows").doc(id).delete();
   return { ok: true };
 });
 
-export const recordSavedWorkflowLaunch = onCall(SAVED_WORKFLOW_OPTS, async (request) => {
+export const recordSavedWorkflowLaunch = localOperation(async (request) => {
   const uid = requireAuth(request);
   const id = cleanDocId(request.data?.id);
   const targetParse = savedWorkflowLaunchTargetSchema.safeParse(request.data?.target);
   if (!id || !targetParse.success) {
-    throw new HttpsError("invalid-argument", "Valid saved workflow id and launch target required.");
+    throw new LocalError("invalid-argument", "Valid saved workflow id and launch target required.");
   }
 
   await db.collection("users").doc(uid).collection("savedWorkflows").doc(id).update({

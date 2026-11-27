@@ -17,7 +17,7 @@ import { WorkflowCard } from "../src/components/WorkflowCard";
 import { AutomationInbox } from "../src/components/AutomationInbox";
 import { MonitoringController, type LiveTimelineBatch } from "../src/monitoring";
 import { Button } from "../src/components/ui/button";
-import { callables, savedWorkflows } from "./mocks/firebase";
+import { callables, savedWorkflows } from "./mocks/localApi";
 import { emitDwell, getBridge } from "./mocks/platform";
 
 const workflow: Workflow = {

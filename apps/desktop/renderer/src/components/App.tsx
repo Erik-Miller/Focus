@@ -6,15 +6,16 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { ensureSignedIn, callables } from "@/firebase";
-import { getBridge, type CaptureState } from "@/platform";
+import { ensureLocalReady, callables } from "@/localApi";
+import { getBridge, type ApiKeyStatus, type CaptureState } from "@/platform";
 import { MonitoringController, type LiveTimelineBatch, type MonitoringStatus } from "../monitoring";
 import {
   formatReportStartCountdown,
   liveMonitoringPhaseFor,
   monitoringLabelFor,
 } from "../appStatus";
-import type { Observation, Report, Session } from "@focus/shared";
+import { type AgentModelId, type Observation, type Report, type Session } from "@focus/shared";
+import { readAgentModelPreference, writeAgentModelPreference } from "../agentModelPreference";
 import {
   useChat,
   useObservations,
@@ -32,6 +33,7 @@ import { AutomationInbox } from "./AutomationInbox";
 import { Button } from "@/components/ui/button";
 import { Launcher, ResizeHandles } from "./DesktopLauncher";
 import { SecondaryPage } from "./SecondaryPage";
+import { SettingsPage } from "./SettingsPage";
 
 const SESSION_KEY = "focus.sessionId";
 const WINDOW_DRAG_IGNORE_SELECTOR = [
@@ -55,7 +57,7 @@ const WINDOW_DRAG_IGNORE_SELECTOR = [
   ".image-tray-backdrop",
   ".sl-menu",
 ].join(",");
-type AppPage = "monitor" | "report" | "inbox";
+type AppPage = "monitor" | "report" | "inbox" | "settings";
 type StartMonitoringPhase = "starting" | "resuming";
 type ReportStartCountdown = {
   sessionId: string;
@@ -88,6 +90,12 @@ export function App() {
   const [startingMonitoring, setStartingMonitoring] = useState<StartMonitoringPhase | null>(null);
   const [localMonitoringSessionId, setLocalMonitoringSessionId] = useState<string | null>(null);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
+  const [keyStatuses, setKeyStatuses] = useState<
+    Partial<Record<"openai" | "anthropic" | "gemini", ApiKeyStatus>>
+  >({});
+  const [agentModel, setAgentModel] = useState<AgentModelId>(() =>
+    readAgentModelPreference(localStorage),
+  );
   const [reportStartCountdown, setReportStartCountdown] = useState<ReportStartCountdown | null>(
     null,
   );
@@ -104,6 +112,7 @@ export function App() {
   const dwellUnsubRef = useRef<(() => void) | null>(null);
   const captureStateUnsubRef = useRef<(() => void) | null>(null);
   const captureIdleTimerRef = useRef<number | null>(null);
+  const agentModelRef = useRef(agentModel);
 
   const session = useSession(sessionId);
   const observations = useObservations(sessionId);
@@ -114,6 +123,47 @@ export function App() {
     setInboxPulseKey((key) => key + 1);
   }, []);
   const savedWorkflows = useSavedWorkflows(50, triggerInboxPulse);
+
+  const refreshKeys = useCallback(async () => {
+    const bridge = getBridge();
+    if (!bridge) return;
+    const statuses = await Promise.all(
+      (["openai", "anthropic", "gemini"] as const).map(async (provider) => [
+        provider,
+        await bridge.getApiKeyStatus(provider),
+      ]),
+    );
+    setKeyStatuses(Object.fromEntries(statuses));
+  }, []);
+  const saveKey = useCallback(
+    async (provider: "openai" | "anthropic" | "gemini", key: string) => {
+      const bridge = getBridge();
+      if (!bridge) throw new Error("Focus desktop bridge unavailable.");
+      await bridge.setApiKey(provider, key);
+      await refreshKeys();
+    },
+    [refreshKeys],
+  );
+  const clearKey = useCallback(
+    async (provider: "openai" | "anthropic" | "gemini") => {
+      const bridge = getBridge();
+      if (!bridge) throw new Error("Focus desktop bridge unavailable.");
+      await bridge.clearApiKey(provider);
+      await refreshKeys();
+    },
+    [refreshKeys],
+  );
+
+  const changeAgentModel = useCallback((modelId: AgentModelId) => {
+    agentModelRef.current = modelId;
+    setAgentModel(modelId);
+    writeAgentModelPreference(localStorage, modelId);
+  }, []);
+
+  const readAgentRequestCredentials = useCallback(
+    async () => ({ agentModel: agentModelRef.current }),
+    [],
+  );
 
   // Switch the viewed session (review past sessions + their reports).
   const selectSession = useCallback((id: string) => {
@@ -143,8 +193,17 @@ export function App() {
   const reportStartQueued = Boolean(reportStartCountdownLabel);
 
   useEffect(() => {
-    ensureSignedIn().then(() => setReady(true));
+    ensureLocalReady()
+      .then(() => setReady(true))
+      .catch((error) => console.error(error));
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    void refreshKeys().catch((err) => {
+      console.error("Failed to load Anthropic key status", err);
+    });
+  }, [ready, refreshKeys]);
 
   useEffect(() => {
     viewedSessionIdRef.current = sessionId;
@@ -204,48 +263,52 @@ export function App() {
   }, [session?.status]);
 
   // Wire a controller + capture/dwell listeners to a (new or resumed) session id.
-  const beginMonitoring = useCallback(async (id: string) => {
-    const bridge = getBridge();
-    if (!bridge) return;
-    setReportStartCountdown(null);
-    setReportPreparingSessionId(null);
-    viewedSessionIdRef.current = id;
-    controllerSessionIdRef.current = id;
-    setLiveTimelineBatches([]);
-    setPage("monitor");
-    setMonitoringStatus({ phase: "idle", bufferCount: 0 });
-    setCaptureState("idle");
-    let controller: MonitoringController | null = null;
-    const handleLiveBatches = (batches: LiveTimelineBatch[]) => {
-      if (controllerRef.current === controller && viewedSessionIdRef.current === id) {
-        setLiveTimelineBatches(batches);
-      }
-    };
-    controller = new MonitoringController(
-      id,
-      undefined,
-      undefined,
-      setMonitoringStatus,
-      handleLiveBatches,
-    );
-    controllerRef.current = controller;
-    controller.start();
-    // Replace any prior dwell subscription so old (stopped) controllers don't
-    // keep receiving events and firing duplicate processObservations calls.
-    dwellUnsubRef.current?.();
-    dwellUnsubRef.current = bridge.onDwell((dwell) => controller.push(dwell));
-    captureStateUnsubRef.current?.();
-    captureStateUnsubRef.current = bridge.onCaptureState((state) => {
-      if (captureIdleTimerRef.current) clearTimeout(captureIdleTimerRef.current);
-      if (state === "capturing") {
-        setCaptureState("capturing");
-        return;
-      }
-      captureIdleTimerRef.current = window.setTimeout(() => setCaptureState("idle"), 650);
-    });
-    await bridge.startCapture();
-    setLocalMonitoringSessionId(id);
-  }, []);
+  const beginMonitoring = useCallback(
+    async (id: string) => {
+      const bridge = getBridge();
+      if (!bridge) return;
+      setReportStartCountdown(null);
+      setReportPreparingSessionId(null);
+      viewedSessionIdRef.current = id;
+      controllerSessionIdRef.current = id;
+      setLiveTimelineBatches([]);
+      setPage("monitor");
+      setMonitoringStatus({ phase: "idle", bufferCount: 0 });
+      setCaptureState("idle");
+      let controller: MonitoringController | null = null;
+      const handleLiveBatches = (batches: LiveTimelineBatch[]) => {
+        if (controllerRef.current === controller && viewedSessionIdRef.current === id) {
+          setLiveTimelineBatches(batches);
+        }
+      };
+      controller = new MonitoringController(
+        id,
+        undefined,
+        undefined,
+        setMonitoringStatus,
+        handleLiveBatches,
+        readAgentRequestCredentials,
+      );
+      controllerRef.current = controller;
+      controller.start();
+      // Replace any prior dwell subscription so old (stopped) controllers don't
+      // keep receiving events and firing duplicate processObservations calls.
+      dwellUnsubRef.current?.();
+      dwellUnsubRef.current = bridge.onDwell((dwell) => controller.push(dwell));
+      captureStateUnsubRef.current?.();
+      captureStateUnsubRef.current = bridge.onCaptureState((state) => {
+        if (captureIdleTimerRef.current) clearTimeout(captureIdleTimerRef.current);
+        if (state === "capturing") {
+          setCaptureState("capturing");
+          return;
+        }
+        captureIdleTimerRef.current = window.setTimeout(() => setCaptureState("idle"), 650);
+      });
+      await bridge.startCapture();
+      setLocalMonitoringSessionId(id);
+    },
+    [readAgentRequestCredentials],
+  );
 
   const clearReportStartCountdown = useCallback((id: string) => {
     setReportStartCountdown((current) => (current?.sessionId === id ? null : current));
@@ -260,7 +323,7 @@ export function App() {
     setReportStartCountdown(null);
     setReportPreparingSessionId(null);
     // Resume only when the selected session document still exists. A stale
-    // localStorage id can survive Firebase cleanup and must start fresh.
+    // localStorage id can survive session deletion and must start fresh.
     const resumeId = sessionId && session?.id === sessionId ? sessionId : null;
     setStartingMonitoring(resumeId ? "resuming" : "starting");
     try {
@@ -333,19 +396,26 @@ export function App() {
     void (async () => {
       try {
         if (bridge) await bridge.stopCapture();
-        if (controller) await controller.stop();
         if (id) await callables.stopSession({ sessionId: id });
-        if (id) await callables.generateReport({ sessionId: id, timeZone: userTimeZone() });
+        if (controller) await controller.stop();
+        if (id) {
+          await callables.generateReport({
+            sessionId: id,
+            timeZone: userTimeZone(),
+            ...(await readAgentRequestCredentials()),
+          });
+        }
       } catch (err) {
         console.error("stop/flush/report failed", err);
       } finally {
+        if (id && viewedSessionIdRef.current === id) setLiveTimelineBatches([]);
         if (id) clearReportStartCountdown(id);
         if (id) {
           setReportPreparingSessionId((current) => (current === id ? null : current));
         }
       }
     })();
-  }, [clearReportStartCountdown, sessionId]);
+  }, [clearReportStartCountdown, readAgentRequestCredentials, sessionId]);
 
   // "New" should only clear the current workspace and stop any active capture.
   // Starting the next capture stays behind the explicit Start monitoring button.
@@ -440,6 +510,17 @@ export function App() {
     setExpanded(true);
   }, []);
 
+  const openSettings = useCallback(() => {
+    const bridge = getBridge();
+    setCollapsing(false);
+    if (bridge) void bridge.setWindowMode("full");
+    setPage("settings");
+    setExpanded(true);
+    void refreshKeys().catch((err) => {
+      console.error("Failed to refresh Anthropic key status", err);
+    });
+  }, [refreshKeys]);
+
   // Collapse back to the bar without ending the session (keeps monitoring live).
   // Shrink the window and fade the page out together, then unmount it.
   const collapseToBar = useCallback(() => {
@@ -458,8 +539,13 @@ export function App() {
     if (!sessionId) return;
     setReportStartCountdown(null);
     setReportPreparingSessionId(sessionId);
-    void callables
-      .generateReport({ sessionId, timeZone: userTimeZone() })
+    void (async () => {
+      await callables.generateReport({
+        sessionId,
+        timeZone: userTimeZone(),
+        ...(await readAgentRequestCredentials()),
+      });
+    })()
       .catch((err) => {
         console.error("report generation failed", err);
       })
@@ -467,7 +553,7 @@ export function App() {
         clearReportStartCountdown(sessionId);
         setReportPreparingSessionId((current) => (current === sessionId ? null : current));
       });
-  }, [clearReportStartCountdown, sessionId]);
+  }, [clearReportStartCountdown, readAgentRequestCredentials, sessionId]);
 
   const startWindowDrag = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     if (event.defaultPrevented) return;
@@ -555,9 +641,10 @@ export function App() {
 
   const monitoring = activelyMonitoring && !stopping && !reportStartQueued && !startingMonitoring;
   const showInboxPage = page === "inbox";
+  const showSettingsPage = page === "settings";
   const showReportPage = Boolean(session && page === "report");
   const showChatDock = Boolean(session && page === "monitor");
-  const showDesktopStatus = Boolean(!showInboxPage && session?.lastError);
+  const showDesktopStatus = Boolean(!showInboxPage && !showSettingsPage && session?.lastError);
   const launcher = (
     <Launcher
       busy={null}
@@ -569,7 +656,9 @@ export function App() {
       onStart={startFocus}
       onStop={stopFocus}
       onNew={newSession}
+      onOpenSettings={openSettings}
       onOpenInbox={openInbox}
+      settingsActive={page === "settings"}
       inboxActive={page === "inbox"}
       inboxCount={savedWorkflows.length}
       inboxPulseKey={inboxPulseKey}
@@ -586,14 +675,14 @@ export function App() {
 
   return (
     <div
-      className={`app${showChatDock ? " has-chat-dock" : ""}${showReportPage ? " app-report-mode" : ""}${showInboxPage ? " app-inbox-mode" : ""}`}
+      className={`app${showChatDock ? " has-chat-dock" : ""}${showReportPage ? " app-report-mode" : ""}${showInboxPage ? " app-inbox-mode" : ""}${showSettingsPage ? " app-settings-mode" : ""}`}
       style={appStyle}
       onMouseDown={startWindowDrag}
     >
       <ResizeHandles />
-      {!showReportPage && !showInboxPage && launcher}
+      {!showReportPage && !showInboxPage && !showSettingsPage && launcher}
       <div className={`app-scroll${collapsing ? " app-exit" : ""}`}>
-        {!showReportPage && !showInboxPage && sessions.length > 0 && (
+        {!showReportPage && !showInboxPage && !showSettingsPage && sessions.length > 0 && (
           <div className="desktop-session-picker">
             <SessionList
               sessions={sessions}
@@ -611,7 +700,17 @@ export function App() {
             )}
           </div>
         )}
-        {showInboxPage ? (
+        {showSettingsPage ? (
+          <SettingsPage
+            keyStatuses={keyStatuses}
+            agentModel={agentModel}
+            onBack={() => setPage("monitor")}
+            onAgentModelChange={changeAgentModel}
+            onRefreshKeys={refreshKeys}
+            onSaveKey={saveKey}
+            onClearKey={clearKey}
+          />
+        ) : showInboxPage ? (
           <AutomationInbox items={savedWorkflows} onBack={() => setPage("monitor")} />
         ) : !session ? (
           <Welcome onStart={startFocus} startingLabel={startingLabel} />
@@ -644,6 +743,7 @@ export function App() {
                 observations={observations}
                 liveBatches={liveTimelineBatches}
                 usage={session.usage}
+                analyzing={Boolean(session.updateInFlight)}
               />
             </section>
           </main>
@@ -658,6 +758,7 @@ export function App() {
             onHeightChange={setChatDockHeight}
             collapsed={desktopChatCollapsed}
             onCollapsedChange={setDesktopChatCollapsed}
+            getAgentRequestCredentials={readAgentRequestCredentials}
           />
         </div>
       )}

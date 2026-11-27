@@ -1,5 +1,5 @@
 import { type MouseEvent as ReactMouseEvent } from "react";
-import { ChevronsDownUp, ChevronsUpDown, Inbox, Play, Plus, Square } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Inbox, Play, Plus, Settings, Square } from "lucide-react";
 import { getBridge } from "@/platform";
 
 export type LiveMonitoringPhase = "monitoring" | "capturing" | "analyzing" | "stopping";
@@ -24,7 +24,9 @@ export function Launcher({
   onStart,
   onStop,
   onNew,
+  onOpenSettings,
   onOpenInbox,
+  settingsActive,
   inboxActive,
   inboxCount,
   inboxPulseKey,
@@ -39,7 +41,9 @@ export function Launcher({
   onStart: () => void;
   onStop: () => void;
   onNew: () => void;
+  onOpenSettings: () => void;
   onOpenInbox: () => void;
+  settingsActive: boolean;
   inboxActive: boolean;
   inboxCount: number;
   inboxPulseKey: number;
@@ -121,6 +125,15 @@ export function Launcher({
       </div>
 
       <div className="lb-right">
+        <button
+          className={`lb-icon${settingsActive ? " is-active" : ""}`}
+          onClick={onOpenSettings}
+          disabled={disabled}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <Settings aria-hidden />
+        </button>
         <button
           className={`lb-icon${inboxActive ? " is-active" : ""}`}
           onClick={onOpenInbox}

@@ -19,10 +19,6 @@ functions/.env.*.local
 *.pem
 service-account*.json
 
-# firebase
-.firebase/
-firebase-debug.log
-firestore-debug.log
 ui-debug.log
 *-debug.log
 
@@ -35,3 +31,15 @@ dist-electron/
 *.log
 .vite/
 coverage/
+
+# Local user data and test captures must never be published
+local-data/
+focus-credentials.json
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.playwright-cli/
+playwright-report/
+test-results/
+output/

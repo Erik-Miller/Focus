@@ -1,5 +1,10 @@
-import { DEFAULT_MONITORING_CONFIG, type DwellInput, type MonitoringConfig } from "@focus/shared";
-import { callables } from "./firebase";
+import {
+  DEFAULT_MONITORING_CONFIG,
+  type AgentModelId,
+  type DwellInput,
+  type MonitoringConfig,
+} from "@focus/shared";
+import { callables } from "./localApi";
 import { createClientObservationId, saveObservationImages } from "./localObservationImages";
 
 const ERROR_BACKOFF_MS = 2 * 60_000;
@@ -65,6 +70,9 @@ export class MonitoringController {
     private readonly onResult?: (intent: string, confidence: number) => void,
     private readonly onStatus?: (status: MonitoringStatus) => void,
     private readonly onLiveBatches?: (batches: LiveTimelineBatch[]) => void,
+    private readonly getAgentRequestCredentials?: () => Promise<{
+      agentModel: AgentModelId;
+    }>,
   ) {
     this.interval = cfg.minUpdateIntervalMs;
   }
@@ -219,9 +227,11 @@ export class MonitoringController {
     } catch (err) {
       if (!isMissingCallableError(err)) throw err;
       console.warn("ingestObservations unavailable; falling back to processObservations", err);
+      const credentials = await this.readAgentRequestCredentials();
       const res = await callables.processObservations({
         sessionId: this.sessionId,
         observations: batch,
+        ...credentials,
       });
       const data = res.data;
       if (data?.currentIntent && this.onResult) {
@@ -251,9 +261,11 @@ export class MonitoringController {
 
   private async synthesize(reason: "timer" | "stop"): Promise<void> {
     try {
+      const credentials = await this.readAgentRequestCredentials();
       const res = await callables.synthesizePendingObservations({
         sessionId: this.sessionId,
         reason,
+        ...credentials,
       });
       const data = res.data;
       this.lastSynthesis = Date.now();
@@ -295,6 +307,18 @@ export class MonitoringController {
 
   private emitLiveBatches(): void {
     this.onLiveBatches?.(this.liveTimelineBatches());
+  }
+
+  private async readAgentRequestCredentials(): Promise<{
+    agentModel?: AgentModelId;
+  }> {
+    if (!this.getAgentRequestCredentials) return {};
+    try {
+      return await this.getAgentRequestCredentials();
+    } catch (err) {
+      console.error("Failed to read agent request credentials", err);
+      return {};
+    }
   }
 
   private liveTimelineBatches(): LiveTimelineBatch[] {

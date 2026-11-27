@@ -19,6 +19,17 @@ contextBridge.exposeInMainWorld("focus_bridge", {
   runAutomation: (input: { target: "desktop" | "terminal"; title: string; prompt: string }) =>
     ipcRenderer.invoke("focus:runAutomation", input),
   getPermissions: () => ipcRenderer.invoke("focus:permissions"),
+  getApiKeyStatus: (provider: string) => ipcRenderer.invoke("focus:keyStatus", provider),
+  setApiKey: (provider: string, key: string) => ipcRenderer.invoke("focus:setKey", provider, key),
+  clearApiKey: (provider: string) => ipcRenderer.invoke("focus:clearKey", provider),
+  localCall: (operation: string, data: unknown) =>
+    ipcRenderer.invoke("focus:localCall", operation, data),
+  localQuery: (query: unknown) => ipcRenderer.invoke("focus:localQuery", query),
+  onLocalChange: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("focus:localChange", listener);
+    return () => ipcRenderer.removeListener("focus:localChange", listener);
+  },
   onDwell: (cb: (dwell: DwellInput) => void) => {
     const listener = (_event: unknown, dwell: DwellInput) => cb(dwell);
     ipcRenderer.on("focus:dwell", listener);

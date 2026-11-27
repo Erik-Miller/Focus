@@ -5,7 +5,7 @@ import {
   type SavedWorkflow,
   type SavedWorkflowLaunchTarget,
 } from "@focus/shared";
-import { callables } from "@/firebase";
+import { callables } from "@/localApi";
 import { getBridge } from "@/platform";
 import { Button } from "@/components/ui/button";
 import { SecondaryPage } from "./SecondaryPage";

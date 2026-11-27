@@ -1,8 +1,29 @@
+import { createCredentialStore, providerName } from "./credentialStore.js";
+import {
+  initializeLocalStore,
+  storeEvents,
+  bucket,
+  localCall,
+  recordLocalFailure,
+  localQuery,
+} from "@focus/local-service";
+import { agentModelOption, DEFAULT_AGENT_MODEL_ID, isAgentModelId } from "@focus/shared";
 import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { app, BrowserWindow, clipboard, ipcMain, screen, shell, systemPreferences } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  type IpcMainInvokeEvent,
+  protocol,
+  safeStorage,
+  screen,
+  shell,
+  systemPreferences,
+} from "electron";
 import liquidGlass from "electron-liquid-glass";
 import { DEFAULT_MONITORING_CONFIG, type DwellInput, type Novelty } from "@focus/shared";
 import { DwellDetector } from "./dwell.js";
@@ -19,6 +40,16 @@ import {
   computeInteractiveBoundsInWorkArea,
   preservePositionForSizeInWorkArea,
 } from "./windowGeometry.js";
+
+// Only one process may own the local SQLite file.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  process.exit(0);
+}
+app.on("second-instance", () => {
+  win?.show();
+  win?.focus();
+});
 
 const cfg = DEFAULT_MONITORING_CONFIG;
 const isDev = process.env.FOCUS_DEV === "1";
@@ -87,6 +118,11 @@ function workAreaFor(bounds: Electron.Rectangle): Electron.Rectangle {
 function windowStatePath(): string {
   return path.join(app.getPath("userData"), "focus-window-state.json");
 }
+
+const credentials = createCredentialStore(
+  () => path.join(app.getPath("userData"), "focus-credentials.json"),
+  safeStorage,
+);
 
 // Keep whichever edge/center the docklet is visually attached to fixed while the
 // height changes, then clamp onto the work area.
@@ -309,6 +345,10 @@ function createWindow() {
     },
   });
 
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event, url) => {
+    if (url !== win?.webContents.getURL()) event.preventDefault();
+  });
   win.webContents.once("did-finish-load", () => {
     if (win) applyLiquidGlass(win);
   });
@@ -556,8 +596,75 @@ ipcMain.handle("focus:permissions", () => {
   const accessibility = systemPreferences.isTrustedAccessibilityClient(false);
   return { screen: screenStatus, accessibility };
 });
+// Credentials never cross back into the renderer. Only the selected provider's key
+// is injected into local agent operations.
+function requireAppSender(event: IpcMainInvokeEvent): void {
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
+    throw new Error("Untrusted application request");
+}
+ipcMain.handle("focus:keyStatus", (event, provider) => {
+  requireAppSender(event);
+  return credentials.status(providerName(provider));
+});
+ipcMain.handle("focus:setKey", (event, provider, key) => {
+  requireAppSender(event);
+  return credentials.save(providerName(provider), key);
+});
+ipcMain.handle("focus:clearKey", (event, provider) => {
+  requireAppSender(event);
+  return credentials.clear(providerName(provider));
+});
+ipcMain.handle("focus:localQuery", (event, query) => {
+  requireAppSender(event);
+  return localQuery(query);
+});
+ipcMain.handle("focus:localCall", async (event, operation, value) => {
+  requireAppSender(event);
+  const data = value && typeof value === "object" ? { ...value } : {};
+  delete data.openaiApiKey;
+  delete data.anthropicApiKey;
+  delete data.geminiApiKey;
+  if (
+    [
+      "processObservations",
+      "synthesizePendingObservations",
+      "chatWithAgent",
+      "generateReport",
+    ].includes(operation)
+  ) {
+    const model = data.agentModel ?? DEFAULT_AGENT_MODEL_ID;
+    if (!isAgentModelId(model)) throw new Error("Select a supported AI model.");
+    const provider = agentModelOption(model).provider;
+    data.agentModel = model;
+    try {
+      data[`${provider}ApiKey`] = credentials.read(provider);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to read API key. Re-enter it in Settings.";
+      await recordLocalFailure(data.sessionId, message);
+      throw new Error(message);
+    }
+  }
+  return localCall(operation, data);
+});
+protocol.registerSchemesAsPrivileged([
+  { scheme: "focus-image", privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await initializeLocalStore(path.join(app.getPath("userData"), "local-data"));
+  storeEvents.on("change", () => win?.webContents.send("focus:localChange"));
+  protocol.handle("focus-image", async (request) => {
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== "local") return new Response(null, { status: 404 });
+      const [buffer] = await bucket.file(decodeURIComponent(url.pathname.slice(1))).download();
+      const type = buffer[0] === 0xff && buffer[1] === 0xd8 ? "image/jpeg" : "image/png";
+      return new Response(new Uint8Array(buffer), { headers: { "Content-Type": type } });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
+  });
   applyAppIcon();
   createWindow();
 });

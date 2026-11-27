@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const port = Number(process.env.FOCUS_E2E_PORT || 5174);
+
 export default defineConfig({
   testDir: "apps/desktop/renderer/e2e",
   timeout: 30_000,
@@ -8,7 +10,7 @@ export default defineConfig({
   workers: 1,
   reporter: [["list"]],
   use: {
-    baseURL: "http://127.0.0.1:5174",
+    baseURL: `http://127.0.0.1:${port}`,
     trace: "on-first-retry",
   },
   projects: [
@@ -18,8 +20,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm --filter @focus/desktop-renderer run dev:e2e",
-    url: "http://127.0.0.1:5174",
+    command: `pnpm --filter @focus/desktop-renderer run dev:e2e --port ${port}`,
+    url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 60_000,
   },

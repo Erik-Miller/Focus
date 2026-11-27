@@ -1,5 +1,6 @@
+import type { DocumentReference } from "../localStore.js";
 import { createHash, randomUUID } from "node:crypto";
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { localOperation, LocalError } from "../localCall.js";
 import {
   directAddressUnderstanding,
   type DwellInput,
@@ -7,22 +8,22 @@ import {
   type Session,
   type Workflow,
 } from "@focus/shared";
-import { db } from "../firebaseApp.js";
+import { db } from "../localStore.js";
 import { runMonitoring, type BatchObservationInput } from "../agent/runAgent.js";
 import {
-  CALLABLE_OPTS,
   HYPOTHESIS_PATH,
-  OBSERVATION_INGEST_CALLABLE_OPTS,
   WORKFLOWS_PATH,
-  configureEnv,
+  agentCredentialsFromData,
   downloadStorageImageAsDataUrl,
   fileContent,
   agentErrorMessage,
-  loadSession,
+  type AgentCredentialInput,
+  loadAgentModelConfig,
+  loadOwnedSession,
   recordUsage,
   requireAuth,
   storagePathFromDownloadUrl,
-  toAgentHttpsError,
+  toAgentLocalError,
   uploadDataUrl,
 } from "./common.js";
 
@@ -57,35 +58,45 @@ interface SynthesisResult {
  *    ingest calls run in parallel.
  * 3. processObservations remains as a compatibility wrapper for older clients.
  */
-export const ingestObservations = onCall(OBSERVATION_INGEST_CALLABLE_OPTS, async (request) => {
-  requireAuth(request);
+export const ingestObservations = localOperation(async (request) => {
+  const uid = requireAuth(request);
   const sessionId = request.data?.sessionId as string;
   const observations = (request.data?.observations as DwellInput[]) ?? [];
-  if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
+  if (!sessionId) throw new LocalError("invalid-argument", "sessionId required.");
   if (observations.length === 0) {
     return { ok: true, persisted: 0, observationIds: [] };
   }
 
-  const result = await persistRawObservations(sessionId, observations);
+  const result = await persistRawObservations(sessionId, uid, observations);
   return { ok: true, ...result };
 });
 
-export const synthesizePendingObservations = onCall(CALLABLE_OPTS, async (request) => {
-  requireAuth(request);
+export const synthesizePendingObservations = localOperation(async (request) => {
+  const uid = requireAuth(request);
   const sessionId = request.data?.sessionId as string;
-  if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
-  return synthesizePendingObservationBatch(sessionId, cleanSynthesisReason(request.data?.reason));
+  if (!sessionId) throw new LocalError("invalid-argument", "sessionId required.");
+  return synthesizePendingObservationBatch(
+    sessionId,
+    uid,
+    cleanSynthesisReason(request.data?.reason),
+    agentCredentialsFromData(request.data),
+  );
 });
 
-export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
-  requireAuth(request);
+export const processObservations = localOperation(async (request) => {
+  const uid = requireAuth(request);
   const sessionId = request.data?.sessionId as string;
   const observations = (request.data?.observations as DwellInput[]) ?? [];
-  if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
+  if (!sessionId) throw new LocalError("invalid-argument", "sessionId required.");
   if (observations.length === 0) return { skipped: true, reason: "empty-batch" };
 
-  const ingest = await persistRawObservations(sessionId, observations);
-  const synthesis = await synthesizePendingObservationBatch(sessionId, "timer");
+  const ingest = await persistRawObservations(sessionId, uid, observations);
+  const synthesis = await synthesizePendingObservationBatch(
+    sessionId,
+    uid,
+    "timer",
+    agentCredentialsFromData(request.data),
+  );
   return {
     ...synthesis,
     persisted: ingest.persisted,
@@ -95,9 +106,10 @@ export const processObservations = onCall(CALLABLE_OPTS, async (request) => {
 
 export async function persistRawObservations(
   sessionId: string,
+  uid: string,
   observations: DwellInput[],
 ): Promise<IngestResult> {
-  const { ref } = await loadSession(sessionId);
+  const { ref } = await loadOwnedSession(sessionId, uid);
   const batchId = randomUUID();
 
   const obsDocs: Observation[] = [];
@@ -132,8 +144,7 @@ export async function persistRawObservations(
       alternatives: [],
       suggestedNextAction: "",
     };
-    // Only attach screenshot URLs when a capture succeeded; undefined values are
-    // fine now that Firestore is configured with ignoreUndefinedProperties.
+    // Only attach local screenshot URLs when a capture succeeded.
     if (fullUrl) {
       obsDoc.fullScreenshotUrl = fullUrl;
       obsDoc.fullScreenshotPath = fullPath;
@@ -163,9 +174,11 @@ export async function persistRawObservations(
 
 export async function synthesizePendingObservationBatch(
   sessionId: string,
+  uid: string,
   _reason: SynthesisReason,
+  credentials: AgentCredentialInput = {},
 ): Promise<SynthesisResult> {
-  const { ref } = await loadSession(sessionId);
+  const { ref } = await loadOwnedSession(sessionId, uid);
   const now = Date.now();
   const claimed = await claimSynthesisLock(ref, now);
 
@@ -186,13 +199,13 @@ export async function synthesizePendingObservationBatch(
     });
 
     const sessionSnap = await ref.get();
-    if (!sessionSnap.exists) throw new HttpsError("not-found", "Session not found.");
+    if (!sessionSnap.exists) throw new LocalError("not-found", "Session not found.");
     const session = sessionSnap.data() as Session;
-    const apiKey = configureEnv();
+    const modelConfig = await loadAgentModelConfig(credentials);
     const startedAt = Date.now();
 
     const result = await runMonitoring({
-      apiKey,
+      modelConfig,
       priorHypothesis: fileContent(session.agentFiles, HYPOTHESIS_PATH),
       priorWorkflows: fileContent(session.agentFiles, WORKFLOWS_PATH),
       currentIntent: session.currentIntent,
@@ -247,7 +260,7 @@ export async function synthesizePendingObservationBatch(
       tx.update(ref, sessionUpdate);
     });
 
-    await recordUsage(ref, "observation", usage, Date.now() - startedAt);
+    await recordUsage(ref, "observation", usage, Date.now() - startedAt, modelConfig.model);
 
     return {
       ok: true,
@@ -258,7 +271,7 @@ export async function synthesizePendingObservationBatch(
     };
   } catch (err) {
     console.error("synthesizePendingObservations failed", err);
-    const callableErr = toAgentHttpsError(err);
+    const callableErr = toAgentLocalError(err);
     await ref
       .update({
         updateInFlight: false,
@@ -273,13 +286,10 @@ export async function synthesizePendingObservationBatch(
   }
 }
 
-async function claimSynthesisLock(
-  ref: FirebaseFirestore.DocumentReference,
-  now: number,
-): Promise<boolean> {
+async function claimSynthesisLock(ref: DocumentReference, now: number): Promise<boolean> {
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    if (!snap.exists) throw new HttpsError("not-found", "Session not found.");
+    if (!snap.exists) throw new LocalError("not-found", "Session not found.");
     const data = snap.data() as Session;
     const heldFresh = data.updateInFlight && now - (data.updateInFlightAt ?? 0) < STALE_LOCK_MS;
     if (heldFresh) return false;
@@ -293,16 +303,14 @@ async function claimSynthesisLock(
   });
 }
 
-async function releaseSynthesisLock(ref: FirebaseFirestore.DocumentReference): Promise<void> {
+async function releaseSynthesisLock(ref: DocumentReference): Promise<void> {
   await ref.update({
     updateInFlight: false,
     updateInFlightAt: 0,
   });
 }
 
-async function loadPendingObservations(
-  ref: FirebaseFirestore.DocumentReference,
-): Promise<Observation[]> {
+async function loadPendingObservations(ref: DocumentReference): Promise<Observation[]> {
   const snap = await ref
     .collection("observations")
     .where("summary", "==", "")

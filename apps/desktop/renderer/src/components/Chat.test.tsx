@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   cancelChatRun: vi.fn(),
 }));
 
-vi.mock("@/firebase", () => ({
+vi.mock("@/localApi", () => ({
   callables: {
     chatWithAgent: mocks.chatWithAgent,
     cancelChatRun: mocks.cancelChatRun,
@@ -46,6 +46,52 @@ describe("Chat", () => {
     });
     expect(screen.getByText("What did I do?")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeDisabled());
+  });
+
+  it("attaches the selected Claude model and saved Anthropic key", async () => {
+    const user = userEvent.setup();
+    render(
+      <Chat
+        sessionId="session1"
+        messages={[]}
+        enabled
+        getAgentRequestCredentials={async () => ({
+          agentModel: "claude-sonnet-4-6",
+        })}
+      />,
+    );
+
+    await user.type(screen.getByPlaceholderText("Message..."), "Summarize this");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(mocks.chatWithAgent).toHaveBeenCalledWith({
+      sessionId: "session1",
+      runId: "run_12345678",
+      message: "Summarize this",
+      agentModel: "claude-sonnet-4-6",
+    });
+  });
+
+  it("attaches the selected Gemini model without an Anthropic key", async () => {
+    const user = userEvent.setup();
+    render(
+      <Chat
+        sessionId="session1"
+        messages={[]}
+        enabled
+        getAgentRequestCredentials={async () => ({ agentModel: "gemini-3.6-flash" })}
+      />,
+    );
+
+    await user.type(screen.getByPlaceholderText("Message..."), "Inspect the screenshots");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(mocks.chatWithAgent).toHaveBeenCalledWith({
+      sessionId: "session1",
+      runId: "run_12345678",
+      message: "Inspect the screenshots",
+      agentModel: "gemini-3.6-flash",
+    });
   });
 
   it("does not send blank or disabled messages", async () => {

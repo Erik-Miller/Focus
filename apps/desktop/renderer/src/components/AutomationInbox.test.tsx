@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   execCommand: vi.fn(),
 }));
 
-vi.mock("@/firebase", () => ({
+vi.mock("@/localApi", () => ({
   callables: {
     deleteSavedWorkflow: mocks.deleteSavedWorkflow,
     recordSavedWorkflowLaunch: mocks.recordSavedWorkflowLaunch,

@@ -6,8 +6,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
-import { directAddressText, type ChatMessage } from "@focus/shared";
-import { callables } from "@/firebase";
+import { directAddressText, type AgentModelId, type ChatMessage } from "@focus/shared";
+import { callables } from "@/localApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -20,6 +20,9 @@ interface Props {
   onHeightChange?: (height: number) => void;
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
+  getAgentRequestCredentials?: () => Promise<{
+    agentModel: AgentModelId;
+  }>;
 }
 
 type ActiveChatRun = { id: string; phase: "running" | "stopping" };
@@ -44,6 +47,7 @@ export function Chat({
   onHeightChange,
   collapsed: controlledCollapsed,
   onCollapsedChange,
+  getAgentRequestCredentials,
 }: Props) {
   const [input, setInput] = useState("");
   const [activeRun, setActiveRun] = useState<ActiveChatRun | null>(null);
@@ -152,7 +156,13 @@ export function Chat({
     ]);
     setActiveChatRun(run);
     try {
-      await callables.chatWithAgent({ sessionId, runId, message });
+      const credentials = await readAgentRequestCredentials(getAgentRequestCredentials);
+      await callables.chatWithAgent({
+        sessionId,
+        runId,
+        message,
+        ...credentials,
+      });
     } catch (err) {
       if (currentActiveRunId() === runId) console.error(err);
       setPendingMessages((current) => current.filter((message) => message.runId !== runId));
@@ -377,6 +387,18 @@ export function Chat({
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+async function readAgentRequestCredentials(
+  getCredentials?: () => Promise<{ agentModel: AgentModelId }>,
+): Promise<{ agentModel?: AgentModelId }> {
+  if (!getCredentials) return {};
+  try {
+    return await getCredentials();
+  } catch (err) {
+    console.error("Failed to read agent request credentials", err);
+    return {};
+  }
 }
 
 function createRunId(): string {

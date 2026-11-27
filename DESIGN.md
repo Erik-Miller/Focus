@@ -25,7 +25,7 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 ## What's interesting / non‑obvious
 
 - **An evolving, filesystem‑backed understanding.** The agent maintains living `/hypothesis.md` and
-  `/workflows.md` documents that are persisted in Firestore and rehydrated on every invocation, so a
+  `/workflows.md` documents that are persisted in local SQLite and rehydrated on every invocation, so a
   session is a single continuously‑refined model rather than a series of one‑off classifications.
 - **Two‑speed cognition.** Passive monitoring is throttled, batched, and novelty‑gated so the agent
   doesn't loop on small things; interactive chat is unthrottled. Same agent, two cadences.
@@ -35,14 +35,15 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 
 ## Key design decisions & tradeoffs
 
-| Decision                                     | Why                                                                                      | Tradeoff                                                                                |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Deep Agents (`deepagents`) for all reasoning | Planning + filesystem working memory + structured output fit an evolving model of intent | Heavier per call (big system prompt, more tokens) than a bare LLM call                  |
-| Server‑side model calls (Cloud Functions)    | Keeps the Gemini key out of the distributed client; clean telemetry/reasoning boundary   | Requires the Blaze plan; adds latency vs. calling Gemini directly                       |
-| Gemini 3.5 Flash, `thinkingLevel` per role   | Medium for monitoring/chat (responsive), high for the report (depth)                     | Image‑heavy monitoring calls are token‑expensive; mitigated by novelty dedup + batching |
-| 250×250 cursor crop + periodic full frame    | Crop = precise focus point; full frame = occasional app/section context                  | Less context on most observations; full frames stay downscaled and cadence-limited      |
-| Dwell at 300ms + dHash novelty filter        | Responsive capture without flooding the agent                                            | Native (client‑side) hashing complexity; tuned thresholds                               |
-| All writes via Functions (Admin SDK)         | Tight, simple Firestore rules — clients only read what they own                          | Every mutation is a round‑trip through a callable                                       |
+| Decision                                     | Why                                                                                      | Tradeoff                                                                           |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Deep Agents (`deepagents`) for all reasoning | Planning + filesystem working memory + structured output fit an evolving model of intent | Heavier per call (big system prompt, more tokens) than a bare LLM call             |
+| Local model calls in Electron | No hosted backend; user controls their provider key | AI calls still need provider network access and quota |
+| User-selected model provider | OpenAI, Anthropic, and Gemini keys in local secure storage | Provider integrations share the same agent contracts |
+| Local Claude BYOK setting                     | Users can bring their own Anthropic key instead of relying on a shared backend secret    | The desktop app must store and forward that key securely for agent-backed calls    |
+| 250×250 cursor crop + periodic full frame    | Crop = precise focus point; full frame = occasional app/section context                  | Less context on most observations; full frames stay downscaled and cadence-limited |
+| Dwell at 300ms + dHash novelty filter        | Responsive capture without flooding the agent                                            | Native (client‑side) hashing complexity; tuned thresholds                          |
+| Local SQLite writes via Electron IPC | Session data stays on the Mac; serialized transactions | Local backups are the user’s responsibility |
 
 ## How we'd extend it with more time
 
@@ -51,12 +52,12 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 - **Proactive, at‑the‑cursor suggestions** once confidence is high.
 - **Closing the loop to actual automation** — turning a discovered, approved workflow into an
   executable action (with human‑in‑the‑loop interrupts).
-- **Subagents** for dedicated workflow‑analysis vs. report‑writing, plus richer LangSmith evals.
+- **Subagents** for dedicated workflow‑analysis vs. report‑writing, plus richer offline evaluations.
 
 ## Approximate time spent
 
-~1 focused build day: planning + interface design, the agent/Functions layer (incl. validating the
-`deepagents` + Gemini 3.5 Flash integration), the React UI, the Electron capture path, and
+~1 focused build day: planning + interface design, the agent service layer (incl. validating the
+`deepagents` + Gemini integration), the React UI, the Electron capture path, and
 deployment/docs.
 
 ## ~5 minute video outline
@@ -68,7 +69,7 @@ deployment/docs.
    token usage.
 3. **Chat (2:30–3:30)** — ask "what workflows did you notice?" and "which should I automate later?";
    show grounded, specific answers; generate the report.
-4. **Under the hood (3:30–4:30)** — architecture diagram; Deep Agent + Gemini in Cloud Functions;
-   the evolving `/hypothesis.md`; the two‑speed monitoring loop and novelty filter; LangSmith traces.
+4. **Under the hood (3:30–4:30)** — architecture diagram; Deep Agent + provider-switched local service; the evolving `/hypothesis.md`; the two‑speed monitoring loop and novelty filter;
+   local token usage.
 5. **Where it goes (4:30–5:00)** — accessibility tree, cross‑session memory, proactive assistance,
    closing the loop to real automation.

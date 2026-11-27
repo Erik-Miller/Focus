@@ -508,7 +508,8 @@ body {
   will-change: opacity, transform;
 }
 .desktop .app.app-report-mode .app-scroll,
-.desktop .app.app-inbox-mode .app-scroll {
+.desktop .app.app-inbox-mode .app-scroll,
+.desktop .app.app-settings-mode .app-scroll {
   -webkit-app-region: no-drag;
   padding: 0;
   gap: 0;
@@ -2662,6 +2663,194 @@ body {
 .desktop .app-inbox-mode .automation-inbox {
   flex: 1;
 }
+
+/* Settings: quiet, inset preference rows. */
+.app-settings-mode,
+.settings-page {
+  background: #191817;
+}
+.settings-page {
+  color: #e8e6e4;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.settings-page .secondary-page-nav {
+  background: #191817;
+  border-color: rgba(255, 255, 255, 0.06);
+  backdrop-filter: none;
+}
+.settings-page-content {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  gap: 32px;
+  padding: 28px 32px 40px;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.settings-section-heading {
+  padding: 0 8px;
+}
+.settings-section-heading h2 {
+  margin: 0 0 5px;
+  color: #b8b6b4;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.settings-section-heading p {
+  margin: 0;
+  color: #93918f;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.settings-card {
+  border: 0;
+  border-radius: 14px;
+  background: #242322;
+  padding: 0 16px;
+  overflow: hidden;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 70px;
+  padding: 14px 0;
+  color: #e8e6e4;
+  font-size: 15px;
+  font-weight: 400;
+}
+.settings-row + .settings-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.065);
+}
+.settings-row > label,
+.settings-row > span {
+  flex-shrink: 0;
+}
+.settings-row input[data-slot="input"],
+.settings-row select {
+  flex: 0 1 290px;
+  width: 46%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid #454341;
+  border-radius: 9px;
+  padding: 0 12px;
+  background: #262524;
+  color: #e8e6e4;
+  box-shadow: none;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.settings-row input[data-slot="input"]::placeholder {
+  color: #777573;
+}
+.settings-row select {
+  padding-right: 28px;
+}
+.settings-row input[data-slot="input"]:focus-visible,
+.settings-row select:focus-visible {
+  border-color: #82aee0;
+  box-shadow: 0 0 0 2px rgb(130 174 224 / 15%);
+}
+.settings-key-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.settings-status-detail {
+  color: #aaa7a5;
+  font-size: 13px;
+}
+.settings-row-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+.settings-row-actions [data-slot="button"] {
+  height: 32px;
+  min-width: 58px;
+  border: 1px solid #484542;
+  border-radius: 8px;
+  background: #302e2c;
+  color: #e8e6e4;
+  box-shadow: none;
+  font: inherit;
+  font-size: 13px;
+}
+.settings-row-actions [data-slot="button"]:hover:not(:disabled) {
+  background: #3b3835;
+}
+.settings-row-actions [data-slot="button"]:disabled {
+  opacity: 0.4;
+}
+.settings-api-keys > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 6px 24px;
+  cursor: pointer;
+  color: #b8b6b4;
+  font-size: 16px;
+  list-style: none;
+}
+.settings-api-keys > summary::-webkit-details-marker {
+  display: none;
+}
+.settings-api-keys > summary svg {
+  width: 16px;
+  height: 16px;
+  transform: rotate(-90deg);
+}
+.settings-api-keys[open] > summary svg {
+  transform: rotate(0);
+}
+.settings-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.settings-help,
+.settings-privacy {
+  margin: 0;
+  padding: 0 8px;
+  color: #92908e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-notice {
+  margin: 0 8px;
+  color: #a5c9ac;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-notice.is-error {
+  color: #e8ab9d;
+}
+@media (max-width: 520px) {
+  .settings-page-content {
+    padding: 22px 16px 32px;
+    gap: 28px;
+  }
+  .settings-row {
+    gap: 12px;
+    font-size: 14px;
+  }
+  .settings-row input[data-slot="input"],
+  .settings-row select {
+    flex-basis: 190px;
+    font-size: 13px;
+  }
+  .settings-section-heading p {
+    font-size: 13px;
+  }
+}
 @media (max-width: 620px) {
   .secondary-page-nav {
     gap: 10px;
@@ -3886,24 +4075,24 @@ details[open] > summary .summary-chevron {
 .desktop .app-report-mode .report-body {
   padding: 10px 18px 28px;
 }
-.desktop :is(.app-report-mode, .app-inbox-mode) .secondary-page {
+.desktop :is(.app-report-mode, .app-inbox-mode, .app-settings-mode) .secondary-page {
   width: 100%;
   max-width: none;
   min-height: 100%;
   margin: 0;
   padding: 0;
 }
-.desktop :is(.app-report-mode, .app-inbox-mode) .secondary-page-nav {
+.desktop :is(.app-report-mode, .app-inbox-mode, .app-settings-mode) .secondary-page-nav {
   min-height: 58px;
   padding: 12px 18px;
   -webkit-app-region: drag;
 }
-.desktop :is(.app-report-mode, .app-inbox-mode) .secondary-page-back,
-.desktop :is(.app-report-mode, .app-inbox-mode) .secondary-page-count,
-.desktop :is(.app-report-mode, .app-inbox-mode) .secondary-page-content {
+.desktop :is(.app-report-mode, .app-inbox-mode, .app-settings-mode) .secondary-page-back,
+.desktop :is(.app-report-mode, .app-inbox-mode, .app-settings-mode) .secondary-page-count,
+.desktop :is(.app-report-mode, .app-inbox-mode, .app-settings-mode) .secondary-page-content {
   -webkit-app-region: no-drag;
 }
-.desktop :is(.app-report-mode, .app-inbox-mode) .secondary-page-content {
+.desktop :is(.app-report-mode, .app-inbox-mode, .app-settings-mode) .secondary-page-content {
   width: 100%;
   padding: 14px 18px 24px;
 }

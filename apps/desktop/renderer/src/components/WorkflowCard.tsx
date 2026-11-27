@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Monitor, Save, Terminal, Zap } from "lucide-react";
 import { directAddressText, type Workflow } from "@focus/shared";
 import { buildAutomationPrompt, type WorkflowContext, type WorkflowSource } from "@/automation";
-import { callables } from "@/firebase";
+import { callables } from "@/localApi";
 import { getBridge, type AutomationLaunchTarget } from "@/platform";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

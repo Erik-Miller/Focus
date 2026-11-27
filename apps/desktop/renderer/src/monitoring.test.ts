@@ -7,7 +7,7 @@ const synthesizePendingObservations = vi.fn();
 const saveObservationImages = vi.fn();
 let nextId = 0;
 
-vi.mock("./firebase", () => ({
+vi.mock("./localApi", () => ({
   callables: {
     processObservations,
     ingestObservations,
@@ -143,8 +143,15 @@ describe("MonitoringController", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const results: Array<[string, number]> = [];
     ingestObservations.mockRejectedValueOnce({ code: "functions/not-found" });
-    const controller = new MonitoringController("session1", cfg, (intent, confidence) =>
-      results.push([intent, confidence]),
+    const controller = new MonitoringController(
+      "session1",
+      cfg,
+      (intent, confidence) => results.push([intent, confidence]),
+      undefined,
+      undefined,
+      async () => ({
+        agentModel: "claude-sonnet-4-6",
+      }),
     );
 
     controller.push(dwell({ novelty: "high" }));
@@ -157,10 +164,35 @@ describe("MonitoringController", () => {
         expect.objectContaining({ clientObservationId: "obs_1000" }),
         expect.objectContaining({ clientObservationId: "obs_2000" }),
       ],
+      agentModel: "claude-sonnet-4-6",
     });
     expect(synthesizePendingObservations).not.toHaveBeenCalled();
     expect(results).toEqual([["You are testing.", 0.8]]);
     warn.mockRestore();
+  });
+
+  it("attaches the saved Anthropic key to synthesis requests", async () => {
+    const controller = new MonitoringController(
+      "session1",
+      cfg,
+      undefined,
+      undefined,
+      undefined,
+      async () => ({
+        agentModel: "claude-sonnet-4-6",
+      }),
+    );
+
+    controller.start();
+    controller.push(dwell({ novelty: "high" }));
+    controller.push(dwell({ novelty: "medium" }));
+    await flushPromises();
+
+    expect(synthesizePendingObservations).toHaveBeenCalledWith({
+      sessionId: "session1",
+      reason: "timer",
+      agentModel: "claude-sonnet-4-6",
+    });
   });
 
   it("caps parallel ingest batches and starts queued batches as slots free up", async () => {

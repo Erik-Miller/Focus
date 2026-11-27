@@ -1,7 +1,4 @@
-import { setGlobalOptions } from "firebase-functions/v2";
-
-setGlobalOptions({ region: "us-central1", maxInstances: 10 });
-
+import "./privacy.js";
 export {
   startSession,
   stopSession,
@@ -20,3 +17,5 @@ export {
   deleteSavedWorkflow,
   recordSavedWorkflowLaunch,
 } from "./callables/savedWorkflows.js";
+export { initializeLocalStore, storeEvents, bucket } from "./localStore.js";
+export { localCall, localQuery, recordLocalFailure } from "./desktopService.js";

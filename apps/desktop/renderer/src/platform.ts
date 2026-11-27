@@ -9,6 +9,13 @@ export interface AutomationLaunchInput {
   prompt: string;
 }
 
+export interface ApiKeyStatus {
+  needsReentry?: boolean;
+  configured: boolean;
+  encryptionAvailable: boolean;
+  savedAt?: number;
+}
+
 /** API exposed by the Electron preload bridge when running in the desktop app. */
 export interface FocusBridge {
   isDesktop: true;
@@ -24,6 +31,17 @@ export interface FocusBridge {
   endResize: () => Promise<void>;
   closeWindow: () => Promise<void>;
   runAutomation: (input: AutomationLaunchInput) => Promise<{ ok: boolean; copied: boolean }>;
+  getApiKeyStatus: (provider: "openai" | "anthropic" | "gemini") => Promise<ApiKeyStatus>;
+  setApiKey: (provider: "openai" | "anthropic" | "gemini", apiKey: string) => Promise<ApiKeyStatus>;
+  clearApiKey: (provider: "openai" | "anthropic" | "gemini") => Promise<ApiKeyStatus>;
+  localCall: (operation: string, data: unknown) => Promise<unknown>;
+  localQuery: (query: {
+    kind: string;
+    sessionId?: string;
+    reportId?: string;
+    max?: number;
+  }) => Promise<unknown>;
+  onLocalChange: (callback: () => void) => () => void;
   onDwell: (cb: (dwell: DwellInput) => void) => () => void;
   onCaptureState: (cb: (state: CaptureState) => void) => () => void;
   getPermissions: () => Promise<{ screen: boolean; accessibility: boolean }>;

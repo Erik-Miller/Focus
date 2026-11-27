@@ -44,7 +44,7 @@ const mocks = vi.hoisted(() => {
         getMetadata: fileGetMetadata,
         save: fileSave,
       })),
-      name: "focus-test.appspot.com",
+      name: "local-test-screenshots",
     },
     fileDownload,
     fileGetMetadata,
@@ -53,7 +53,7 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("../firebaseApp.js", () => ({
+vi.mock("../localStore.js", () => ({
   db: mocks.db,
   bucket: mocks.bucket,
   FieldValue: {
@@ -126,7 +126,7 @@ describe("observation ingest and synthesis flow helpers", () => {
   });
 
   it("persists raw observations without taking the synthesis lock or invoking the model", async () => {
-    const result = await persistRawObservations("session1", [dwell]);
+    const result = await persistRawObservations("session1", "uid1", [dwell]);
 
     expect(result).toEqual({ persisted: 1, observationIds: ["obs_12345678"] });
     expect(mocks.batchSet).toHaveBeenCalledWith(
@@ -150,7 +150,7 @@ describe("observation ingest and synthesis flow helpers", () => {
   });
 
   it("stores screenshot paths alongside download urls for later synthesis", async () => {
-    await persistRawObservations("session1", [
+    await persistRawObservations("session1", "uid1", [
       {
         ...dwell,
         cursorCropDataUrl: "data:image/png;base64,Y3JvcA==",
@@ -162,7 +162,7 @@ describe("observation ingest and synthesis flow helpers", () => {
       expect.anything(),
       expect.objectContaining({
         cursorCropPath: "screenshots/session1/obs_12345678-crop",
-        cursorCropUrl: expect.stringContaining("screenshots%2Fsession1%2Fobs_12345678-crop"),
+        cursorCropUrl: expect.stringContaining("screenshots/session1/obs_12345678-crop"),
       }),
       { merge: true },
     );
@@ -180,8 +180,7 @@ describe("observation ingest and synthesis flow helpers", () => {
       dwellMs: 300,
       novelty: "high",
       frameHash: "hash",
-      cursorCropUrl:
-        "https://firebasestorage.googleapis.com/v0/b/focus-test.appspot.com/o/screenshots%2Fsession1%2Fobs_12345678-crop?alt=media&token=abc",
+      cursorCropUrl: "focus-image://local/screenshots/session1/obs_12345678-crop",
       summary: "",
       inferredIntent: "",
       confidence: 0,
@@ -195,7 +194,7 @@ describe("observation ingest and synthesis flow helpers", () => {
   });
 
   it("skips synthesis when another fresh synthesis lock is held", async () => {
-    const result = await synthesizePendingObservationBatch("session1", "timer");
+    const result = await synthesizePendingObservationBatch("session1", "uid1", "timer");
 
     expect(result).toEqual({
       ok: true,
@@ -203,6 +202,18 @@ describe("observation ingest and synthesis flow helpers", () => {
       observationCount: 0,
       reason: "update-in-flight",
     });
+    expect(mocks.runMonitoring).not.toHaveBeenCalled();
+  });
+
+  it("rejects observation access for a different signed-in user", async () => {
+    await expect(persistRawObservations("session1", "uid2", [dwell])).rejects.toMatchObject({
+      code: "permission-denied",
+    });
+    await expect(
+      synthesizePendingObservationBatch("session1", "uid2", "timer"),
+    ).rejects.toMatchObject({ code: "permission-denied" });
+
+    expect(mocks.batchCommit).not.toHaveBeenCalled();
     expect(mocks.runMonitoring).not.toHaveBeenCalled();
   });
 });

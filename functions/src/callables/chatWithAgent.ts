@@ -1,43 +1,80 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { db, type DocumentReference } from "../localStore.js";
+import { localOperation, LocalError } from "../localCall.js";
 import { directAddressText, type ChatMessage, type Observation } from "@focus/shared";
 import { runChat } from "../agent/runAgent.js";
 import { createSaveWorkflowTool } from "../agent/saveWorkflowTool.js";
 import {
-  CALLABLE_OPTS,
   HYPOTHESIS_PATH,
   WORKFLOWS_PATH,
+  agentCredentialsFromData,
   agentErrorMessage,
-  configureEnv,
+  downloadStorageImageAsDataUrl,
   fileContent,
-  loadSession,
+  loadAgentModelConfig,
+  loadOwnedSession,
   observationsDigest,
   recordUsage,
   requireAuth,
-  toAgentHttpsError,
+  storagePathFromDownloadUrl,
+  toAgentLocalError,
 } from "./common.js";
 
 const CHAT_RUNS_COLLECTION = "chatRuns";
 const CANCEL_POLL_MS = 400;
+export const MAX_CHAT_OBSERVATION_IMAGES = 4;
 
 type ChatRunStatus = "running" | "canceled" | "completed" | "failed";
+
+export function chatObservationImagePath(observation: Observation): string | null {
+  if (observation.fullScreenshotPath) return observation.fullScreenshotPath;
+  if (observation.fullScreenshotUrl) {
+    const path = storagePathFromDownloadUrl(observation.fullScreenshotUrl);
+    if (path) return path;
+  }
+  if (observation.cursorCropPath) return observation.cursorCropPath;
+  if (observation.cursorCropUrl) return storagePathFromDownloadUrl(observation.cursorCropUrl);
+  return null;
+}
+
+async function loadChatObservationImages(observations: Observation[]) {
+  const selected = observations
+    .filter((observation) => chatObservationImagePath(observation))
+    .slice(-MAX_CHAT_OBSERVATION_IMAGES);
+  const images = await Promise.all(
+    selected.map(async (observation) => {
+      const path = chatObservationImagePath(observation);
+      if (!path) return null;
+      try {
+        return {
+          obsId: observation.id,
+          app: observation.app,
+          windowTitle: observation.windowTitle,
+          timestamp: observation.timestamp,
+          dataUrl: await downloadStorageImageAsDataUrl(path),
+        };
+      } catch (err) {
+        console.warn(`Failed to load chat screenshot ${observation.id}`, err);
+        return null;
+      }
+    }),
+  );
+  return images.filter((image) => image !== null);
+}
 
 export function cleanRunId(value: unknown): string {
   const runId = typeof value === "string" ? value.trim() : "";
   if (!/^[A-Za-z0-9_-]{8,128}$/.test(runId)) {
-    throw new HttpsError("invalid-argument", "Valid runId required.");
+    throw new LocalError("invalid-argument", "Valid runId required.");
   }
   return runId;
 }
 
-async function isChatRunCanceled(runRef: FirebaseFirestore.DocumentReference): Promise<boolean> {
+async function isChatRunCanceled(runRef: DocumentReference): Promise<boolean> {
   const snap = await runRef.get();
   return snap.exists && snap.get("status") === "canceled";
 }
 
-function watchChatRunCancel(
-  runRef: FirebaseFirestore.DocumentReference,
-  controller: AbortController,
-): () => void {
+function watchChatRunCancel(runRef: DocumentReference, controller: AbortController): () => void {
   let checking = false;
   const timer = setInterval(() => {
     if (checking || controller.signal.aborted) return;
@@ -55,7 +92,7 @@ function watchChatRunCancel(
 }
 
 async function updateChatRunStatus(
-  runRef: FirebaseFirestore.DocumentReference,
+  runRef: DocumentReference,
   status: ChatRunStatus,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
@@ -64,16 +101,17 @@ async function updateChatRunStatus(
     .catch(() => undefined);
 }
 
-export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
+export const chatWithAgent = localOperation(async (request) => {
   const uid = requireAuth(request);
   const sessionId = request.data?.sessionId as string;
   const message = (request.data?.message as string)?.trim();
   const runId = cleanRunId(request.data?.runId);
+  const credentials = agentCredentialsFromData(request.data);
   if (!sessionId || !message) {
-    throw new HttpsError("invalid-argument", "sessionId, runId, and message required.");
+    throw new LocalError("invalid-argument", "sessionId, runId, and message required.");
   }
 
-  const { session, ref } = await loadSession(sessionId);
+  const { session, ref } = await loadOwnedSession(sessionId, uid);
   const startedAt = Date.now();
   const runRef = ref.collection(CHAT_RUNS_COLLECTION).doc(runId);
 
@@ -87,7 +125,7 @@ export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
     createdAt: Date.now(),
     runId,
   };
-  const runAlreadyCanceled = await ref.firestore.runTransaction(async (tx) => {
+  const runAlreadyCanceled = await db.runTransaction(async (tx) => {
     const snap = await tx.get(runRef);
     if (snap.exists && snap.get("status") === "canceled") return true;
     tx.set(
@@ -119,9 +157,10 @@ export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
 
   try {
     if (await isChatRunCanceled(runRef)) return { canceled: true };
+    const modelConfig = await loadAgentModelConfig(credentials);
+    const observationImages = await loadChatObservationImages(observations);
     const controller = new AbortController();
     const stopWatchingCancel = watchChatRunCancel(runRef, controller);
-    const apiKey = configureEnv();
     const sourceTitle = session.currentIntent || session.title || "Focus session";
     const saveWorkflowTool = createSaveWorkflowTool({
       uid,
@@ -139,10 +178,11 @@ export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
     let result: Awaited<ReturnType<typeof runChat>>;
     try {
       result = await runChat({
-        apiKey,
+        modelConfig,
         hypothesis: fileContent(session.agentFiles, HYPOTHESIS_PATH),
         workflows: fileContent(session.agentFiles, WORKFLOWS_PATH),
         observationsDigest: observationsDigest(observations),
+        observationImages,
         history,
         message,
         tools: [saveWorkflowTool],
@@ -174,7 +214,7 @@ export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
       completedAt: Date.now(),
       agentMessageId: agentMsgRef.id,
     });
-    await recordUsage(ref, "chat", result.usage, Date.now() - startedAt);
+    await recordUsage(ref, "chat", result.usage, Date.now() - startedAt, modelConfig.model);
     await ref.update({ lastError: "", lastErrorAt: 0 });
 
     return { answer };
@@ -186,7 +226,7 @@ export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
     }
     console.error("chatWithAgent failed", err);
     await updateChatRunStatus(runRef, "failed", { failedAt: Date.now() });
-    const callableErr = toAgentHttpsError(err);
+    const callableErr = toAgentLocalError(err);
     await ref
       .update({
         lastError: agentErrorMessage(err),
@@ -197,13 +237,13 @@ export const chatWithAgent = onCall(CALLABLE_OPTS, async (request) => {
   }
 });
 
-export const cancelChatRun = onCall(CALLABLE_OPTS, async (request) => {
-  requireAuth(request);
+export const cancelChatRun = localOperation(async (request) => {
+  const uid = requireAuth(request);
   const sessionId = request.data?.sessionId as string;
   const runId = cleanRunId(request.data?.runId);
-  if (!sessionId) throw new HttpsError("invalid-argument", "sessionId and runId required.");
+  if (!sessionId) throw new LocalError("invalid-argument", "sessionId and runId required.");
 
-  const { ref } = await loadSession(sessionId);
+  const { ref } = await loadOwnedSession(sessionId, uid);
   await updateChatRunStatus(ref.collection(CHAT_RUNS_COLLECTION).doc(runId), "canceled", {
     canceledAt: Date.now(),
   });

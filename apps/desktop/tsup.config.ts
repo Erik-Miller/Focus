@@ -10,8 +10,8 @@ export default defineConfig({
   target: "node20",
   outDir: "dist-electron",
   clean: true,
-  noExternal: ["@focus/shared"],
-  external: ["electron", "electron-liquid-glass"],
+  noExternal: [/^(?!sql\.js|electron).*/],
+  external: ["electron", "electron-liquid-glass", "sql.js", "sql.js/dist/sql-wasm-inline.js"],
   splitting: false,
   sourcemap: true,
 });

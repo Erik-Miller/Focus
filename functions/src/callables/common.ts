@@ -1,51 +1,118 @@
-import { randomUUID } from "node:crypto";
-import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
-import { defineSecret } from "firebase-functions/params";
-import type { AgentRunKind, Observation, Session, ThinkingLevel, TokenUsage } from "@focus/shared";
-import { db, bucket, FieldValue } from "../firebaseApp.js";
-import { THINKING_BY_KIND } from "../agent/model.js";
-
-export const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
-export const LANGSMITH_API_KEY = defineSecret("LANGSMITH_API_KEY");
+import { disableHostedTelemetry } from "../privacy.js";
+import type { DocumentReference } from "../localStore.js";
+import { LocalError, type LocalRequest } from "../localCall.js";
+import {
+  agentModelOption,
+  isAgentModelId,
+  type AgentModelId,
+  type AgentRunKind,
+  type Observation,
+  type Session,
+  type ThinkingLevel,
+  type TokenUsage,
+} from "@focus/shared";
+import { db, bucket, FieldValue } from "../localStore.js";
+import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  THINKING_BY_KIND,
+  type AgentModelConfig,
+  type AgentModelProvider,
+} from "../agent/model.js";
+import { resolveAgentModelSelection } from "../agent/providerConfig.js";
 
 export const HYPOTHESIS_PATH = "/hypothesis.md";
 export const WORKFLOWS_PATH = "/workflows.md";
 
-/** Runtime options shared by every agent-backed callable. */
-export const CALLABLE_OPTS = {
-  secrets: [GEMINI_API_KEY, LANGSMITH_API_KEY],
-  timeoutSeconds: 300,
-  memory: "1GiB" as const,
-  region: "us-central1" as const,
-};
+export interface AgentCredentialInput {
+  agentModel?: unknown;
+  anthropicApiKey?: unknown;
+  openaiApiKey?: unknown;
+  geminiApiKey?: unknown;
+}
 
-/** Lightweight callable options for session bookkeeping that does not run agents. */
-export const SESSION_CALLABLE_OPTS = {
-  timeoutSeconds: 30,
-  memory: "256MiB" as const,
-  region: "us-central1" as const,
-};
+/** Disable hosted tracing for local execution. */
+export function configureEnv(): void {
+  // Local runs never upload tracing/analytics, even if inherited from the shell.
+  disableHostedTelemetry();
+}
 
-/** Lightweight callable options for screenshot/observation persistence. */
-export const OBSERVATION_INGEST_CALLABLE_OPTS = {
-  timeoutSeconds: 120,
-  memory: "512MiB" as const,
-  region: "us-central1" as const,
-};
+export function agentCredentialsFromData(data: unknown): AgentCredentialInput {
+  if (!data || typeof data !== "object") return {};
+  const { agentModel, anthropicApiKey, openaiApiKey, geminiApiKey } = data as {
+    agentModel?: unknown;
+    anthropicApiKey?: unknown;
+    openaiApiKey?: unknown;
+    geminiApiKey?: unknown;
+  };
+  return {
+    ...(openaiApiKey === undefined ? {} : { openaiApiKey }),
+    ...(geminiApiKey === undefined ? {} : { geminiApiKey }),
+    ...(agentModel === undefined ? {} : { agentModel }),
+    ...(anthropicApiKey === undefined ? {} : { anthropicApiKey }),
+  };
+}
 
-/** Wire LangSmith tracing + Gemini key into the process env for this invocation. */
-export function configureEnv(): string {
-  const langsmithKey = LANGSMITH_API_KEY.value();
-  if (langsmithKey) {
-    process.env.LANGSMITH_API_KEY = langsmithKey;
-    process.env.LANGSMITH_TRACING = "true";
-    process.env.LANGSMITH_PROJECT = "Focus";
-    // In serverless (Cloud Run) the instance is frozen as soon as the response
-    // returns, so background trace uploads never finish. Run callbacks inline
-    // and block on them before returning so traces are actually flushed.
-    process.env.LANGCHAIN_CALLBACKS_BACKGROUND = "false";
+export function cleanAgentModelId(value: unknown): AgentModelId | undefined {
+  if (value === undefined) return undefined;
+  if (!isAgentModelId(value)) {
+    throw new LocalError("invalid-argument", "Select a supported AI model.");
   }
-  return GEMINI_API_KEY.value();
+  return value;
+}
+
+export function cleanAnthropicApiKey(value: unknown): string | undefined {
+  const apiKey = typeof value === "string" ? value.trim() : "";
+  if (!apiKey) return undefined;
+  if (apiKey.length < 20 || apiKey.length > 4096 || /\s/.test(apiKey)) {
+    throw new LocalError("invalid-argument", "Valid Anthropic API key required.");
+  }
+  return apiKey;
+}
+
+export function cleanProviderApiKey(value: unknown, provider: string): string | undefined {
+  const key = typeof value === "string" ? value.trim() : "";
+  if (!key) return undefined;
+  if (key.length < 20 || key.length > 4096 || /\s/.test(key))
+    throw new LocalError("invalid-argument", `Valid ${provider} API key required.`);
+  return key;
+}
+
+export async function loadAgentModelConfig(
+  credentials: AgentCredentialInput = {},
+): Promise<AgentModelConfig> {
+  configureEnv();
+  const requestedModel = cleanAgentModelId(credentials.agentModel);
+  const selection = requestedModel
+    ? {
+        provider: agentModelOption(requestedModel).provider,
+        model: requestedModel,
+      }
+    : await resolveAgentModelSelection();
+  const apiKey = apiKeyForProvider(selection.provider, credentials);
+  if (!apiKey) {
+    throw new LocalError("failed-precondition", missingApiKeyMessage(selection.provider));
+  }
+  return { ...selection, apiKey };
+}
+
+function apiKeyForProvider(
+  provider: AgentModelProvider,
+  credentials: AgentCredentialInput,
+): string | undefined {
+  if (provider === "anthropic") {
+    return cleanAnthropicApiKey(credentials.anthropicApiKey);
+  }
+  return cleanProviderApiKey(
+    provider === "openai" ? credentials.openaiApiKey : credentials.geminiApiKey,
+    provider,
+  );
+}
+
+function missingApiKeyMessage(provider: AgentModelProvider): string {
+  if (provider === "anthropic") {
+    return "Claude is enabled, but no Anthropic API key was provided. Add one in Focus settings.";
+  }
+  return `Add your ${provider === "openai" ? "OpenAI" : "Gemini"} API key in Focus settings.`;
 }
 
 function collectErrorMessages(err: unknown): string[] {
@@ -72,70 +139,87 @@ function collectErrorMessages(err: unknown): string[] {
   return messages;
 }
 
-export function isGeminiQuotaError(err: unknown): boolean {
+export function isProviderQuotaError(err: unknown): boolean {
   const text = collectErrorMessages(err).join("\n");
-  return /429|too many requests|quota exceeded|resource_exhausted/i.test(text);
+  return /429|rate.?limit|too many requests|quota exceeded|resource_exhausted/i.test(text);
 }
 
-export function toAgentHttpsError(err: unknown): HttpsError {
-  if (err instanceof HttpsError) return err;
-  if (isGeminiQuotaError(err)) {
-    return new HttpsError(
-      "resource-exhausted",
-      "Gemini quota is exhausted for gemini-3.5-flash. Wait for the quota reset or move the Gemini API key to a paid/higher-quota project.",
+export function toAgentLocalError(err: unknown): LocalError {
+  if (err instanceof LocalError) return err;
+  if (
+    /401|authentication_error|invalid.{0,12}api.?key|incorrect.{0,12}api.?key/i.test(
+      collectErrorMessages(err).join("\n"),
+    )
+  ) {
+    return new LocalError(
+      "unauthenticated",
+      "Your API key was rejected by the provider. Open Settings and save a valid key for the selected model.",
     );
   }
-  return new HttpsError("internal", "Agent run failed. Check the Cloud Functions logs.");
+  if (isProviderQuotaError(err)) {
+    return new LocalError(
+      "resource-exhausted",
+      "The configured model provider is rate-limited or out of quota. Wait for the quota reset or switch the model in Focus settings.",
+    );
+  }
+  return new LocalError("internal", "Agent run failed. Check the local application logs.");
 }
 
 export function agentErrorMessage(err: unknown): string {
-  if (isGeminiQuotaError(err)) return toAgentHttpsError(err).message;
-  return collectErrorMessages(err)[0] || "Agent run failed. Check the Cloud Functions logs.";
+  const friendly = toAgentLocalError(err);
+  if (friendly.code !== "internal") return friendly.message;
+  return collectErrorMessages(err)[0] || "Agent run failed. Check the local application logs.";
 }
 
-export function requireAuth(request: CallableRequest): string {
+export function requireAuth(request: LocalRequest): string {
   const uid = request.auth?.uid;
   if (!uid) {
-    throw new HttpsError("unauthenticated", "Sign in (anonymous is fine) to use Focus.");
+    throw new LocalError(
+      "unauthenticated",
+      "Local workspace identity is unavailable. Restart Focus.",
+    );
   }
   return uid;
 }
 
-export async function loadSession(
+export function requireSessionOwner(session: Session, uid: string): void {
+  if (session.ownerUid !== uid) {
+    throw new LocalError("permission-denied", "You can only access your own sessions.");
+  }
+}
+
+export async function loadOwnedSession(
   sessionId: string,
-): Promise<{ session: Session; ref: FirebaseFirestore.DocumentReference }> {
+  uid: string,
+): Promise<{ session: Session; ref: DocumentReference }> {
   const ref = db.collection("sessions").doc(sessionId);
   const snap = await ref.get();
   if (!snap.exists) {
-    throw new HttpsError("not-found", "Session not found.");
+    throw new LocalError("not-found", "Session not found.");
   }
-  return { session: snap.data() as Session, ref };
+  const session = snap.data() as Session;
+  requireSessionOwner(session, uid);
+  return { session, ref };
 }
 
 export function fileContent(agentFiles: Record<string, string>, path: string): string {
   return agentFiles?.[path] ?? "";
 }
 
-/** Decode a data URL and upload it to Storage, returning a tokenized download URL. */
+/** Save a data URL to the local screenshots directory and return an app-protocol URL. */
 export async function uploadDataUrl(path: string, dataUrl: string): Promise<string> {
   const match = /^data:(.+?);base64,(.*)$/.exec(dataUrl);
   if (!match) {
-    throw new HttpsError("invalid-argument", "Malformed data URL.");
+    throw new LocalError("invalid-argument", "Malformed data URL.");
   }
   const contentType = match[1];
   const buffer = Buffer.from(match[2], "base64");
-  const token = randomUUID();
   const file = bucket.file(path);
-  await file.save(buffer, {
-    contentType,
-    metadata: { metadata: { firebaseStorageDownloadTokens: token } },
-  });
-  return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(
-    path,
-  )}?alt=media&token=${token}`;
+  await file.save(buffer, { contentType });
+  return `focus-image://local/${path}`;
 }
 
-/** Download a Storage object and present it in the data URL shape expected by image models. */
+/** Read a local screenshot in the data URL shape expected by image models. */
 export async function downloadStorageImageAsDataUrl(path: string): Promise<string> {
   const file = bucket.file(path);
   const [buffer] = await file.download();
@@ -154,24 +238,10 @@ export async function downloadStorageImageAsDataUrl(path: string): Promise<strin
 export function storagePathFromDownloadUrl(value: string): string | null {
   const candidate = value.trim();
   if (!candidate) return null;
-  if (candidate.startsWith("gs://")) {
-    const [, ...pathParts] = candidate.slice("gs://".length).split("/");
-    const path = pathParts.join("/");
-    return path || null;
-  }
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)) return candidate;
-
-  try {
-    const url = new URL(candidate);
-    if (url.hostname !== "firebasestorage.googleapis.com") return null;
-    const marker = "/o/";
-    const index = url.pathname.indexOf(marker);
-    if (index < 0) return null;
-    const encodedPath = url.pathname.slice(index + marker.length);
-    return decodeURIComponent(encodedPath) || null;
-  } catch {
-    return null;
-  }
+  if (candidate.startsWith("focus-image://local/"))
+    return candidate.slice("focus-image://local/".length);
+  if (/^screenshots\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(candidate)) return candidate;
+  return null;
 }
 
 /** Build a compact text digest of observations for chat/report context. */
@@ -230,17 +300,18 @@ export function formatTimestampForTimeZone(timestamp: number, timeZone?: string)
 
 /** Persist a usage event and atomically increment the session usage aggregate. */
 export async function recordUsage(
-  sessionRef: FirebaseFirestore.DocumentReference,
+  sessionRef: DocumentReference,
   kind: AgentRunKind,
   usage: TokenUsage,
   latencyMs: number,
+  model: string = DEFAULT_MODEL_BY_PROVIDER.gemini,
 ): Promise<void> {
   const thinkingLevel: ThinkingLevel = THINKING_BY_KIND[kind];
   const eventRef = sessionRef.collection("usageEvents").doc();
   await eventRef.set({
     id: eventRef.id,
     kind,
-    model: "gemini-3.5-flash",
+    model,
     thinkingLevel,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,

@@ -47,7 +47,7 @@ export const testProjects = [
       coverage: {
         provider: "v8",
         include: ["functions/src/**/*.ts"],
-        exclude: [...logicCoverageExclude, "**/firebaseApp.ts"],
+        exclude: logicCoverageExclude,
         thresholds: { statements: 90, branches: 90, functions: 90, lines: 90 },
       },
     },
@@ -92,14 +92,6 @@ export const testProjects = [
         exclude: [...logicCoverageExclude, "**/components/ui/**", "**/styles.css"],
         thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 },
       },
-    },
-  }),
-  defineProject({
-    test: {
-      name: "rules",
-      environment: "node",
-      include: ["tests/rules/**/*.test.ts"],
-      testTimeout: 30_000,
     },
   }),
 ];

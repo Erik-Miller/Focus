@@ -18,7 +18,7 @@ declare global {
   }
 }
 
-export function resetE2eFirebaseMocks(): void {
+export function resetE2eLocalMocks(): void {
   savedWorkflows.length = 0;
   launches.length = 0;
   pendingChatResolve?.({ data: { answer: "" } });
@@ -83,7 +83,7 @@ export const callables = {
 
 window.focusE2eCancelChat = async () => callables.cancelChatRun();
 
-export async function ensureSignedIn() {
+export async function ensureLocalReady() {
   return { uid: "uid-e2e" };
 }
 

@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../firebaseApp.js", () => ({
+vi.mock("../localStore.js", () => ({
   db: mocks.db,
 }));
 
@@ -47,13 +47,17 @@ describe("generateReport analysis gate", () => {
       update: vi.fn(),
     };
 
-    await ensureObservationsSynthesizedBeforeReport("session1", ref as never, {
+    await ensureObservationsSynthesizedBeforeReport("session1", "uid1", ref as never, {
       maxWaitMs: 1_000,
       pollMs: 0,
     });
 
     expect(query.where).toHaveBeenCalledWith("summary", "==", "");
-    expect(mocks.synthesizePendingObservationBatch).toHaveBeenCalledWith("session1", "stop");
+    expect(mocks.synthesizePendingObservationBatch).toHaveBeenCalledWith(
+      "session1",
+      "uid1",
+      "stop",
+    );
     expect(ref.update).toHaveBeenCalledWith(
       expect.objectContaining({
         agentActivity: "Finishing observation analysis before writing the report.",
@@ -72,7 +76,7 @@ describe("generateReport analysis gate", () => {
       update: vi.fn(),
     };
 
-    await ensureObservationsSynthesizedBeforeReport("session1", ref as never, {
+    await ensureObservationsSynthesizedBeforeReport("session1", "uid1", ref as never, {
       maxWaitMs: 1_000,
       pollMs: 0,
     });

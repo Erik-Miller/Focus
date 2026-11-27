@@ -1,5 +1,5 @@
 {
-  "name": "@focus/functions",
+  "name": "@focus/local-service",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,23 +8,26 @@
     "node": "24"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsc --noEmit && tsup",
     "build:watch": "tsup --watch",
-    "serve": "pnpm run build && firebase emulators:start --only functions",
     "validate": "node --import tsx scripts/validateAgent.ts"
   },
   "dependencies": {
-    "@langchain/core": "^1.1.49",
+    "@focus/shared": "workspace:*",
+    "@langchain/anthropic": "1.4.0",
+    "@langchain/core": "^1.5.1",
     "@langchain/google-genai": "^2.1.31",
+    "@langchain/openai": "^1.8.5",
     "deepagents": "^1.10.2",
-    "firebase-admin": "^13.0.2",
-    "firebase-functions": "^6.3.0",
+    "sql.js": "^1.17.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/sql.js": "^1.4.9",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
-  }
+  },
+  "types": "lib/index.d.ts"
 }

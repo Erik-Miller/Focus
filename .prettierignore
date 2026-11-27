@@ -4,5 +4,7 @@ dist-electron
 lib
 out
 build
-.firebase
 pnpm-lock.yaml
+output
+.playwright-cli
+test-results

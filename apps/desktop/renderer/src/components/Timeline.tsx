@@ -11,14 +11,16 @@ export function Timeline({
   observations,
   liveBatches = [],
   usage,
+  analyzing = false,
 }: {
   sessionId?: string | null;
   observations: Observation[];
   liveBatches?: LiveTimelineBatch[];
   usage?: UsageAggregate;
+  analyzing?: boolean;
 }) {
   const [selectedEntry, setSelectedEntry] = useState<TimelineEntry | null>(null);
-  const entries = buildTimelineEntries(observations, liveBatches);
+  const entries = buildTimelineEntries(observations, liveBatches, analyzing);
   const observedCount = entries.reduce((total, entry) => total + entry.count, 0);
   const localImages = useLocalObservationImages(sessionId ?? null, observations);
 
@@ -147,6 +149,7 @@ interface TimelineEntry {
 export function buildTimelineEntries(
   observations: Observation[],
   liveBatches: LiveTimelineBatch[],
+  analyzing = true,
 ): TimelineEntry[] {
   const observedIds = new Set(observations.map((observation) => observation.id));
   const entries: TimelineEntry[] = [];
@@ -161,7 +164,7 @@ export function buildTimelineEntries(
   }
 
   for (const [id, group] of groups) {
-    entries.push(entryFromObservationGroup(id, group));
+    entries.push(entryFromObservationGroup(id, group, analyzing));
   }
 
   for (const batch of liveBatches) {
@@ -176,10 +179,10 @@ function shouldGroupBatch(observation: Observation): boolean {
   return Boolean(observation.batchId);
 }
 
-function entryFromObservationGroup(id: string, observations: Observation[]): TimelineEntry {
+function entryFromObservationGroup(id: string, observations: Observation[], analyzing: boolean): TimelineEntry {
   const ordered = [...observations].sort((a, b) => a.timestamp - b.timestamp);
   const latest = ordered[ordered.length - 1];
-  const status: TimelineEntryStatus = ordered.some((o) => !o.summary) ? "analyzing" : "analyzed";
+  const status: TimelineEntryStatus = ordered.some((o) => !o.summary) ? (analyzing ? "analyzing" : "captured") : "analyzed";
   const count = ordered.length;
   const isBatch = id.startsWith("batch:");
   return {

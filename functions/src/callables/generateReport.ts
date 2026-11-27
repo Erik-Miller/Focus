@@ -1,4 +1,5 @@
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import type { DocumentReference } from "../localStore.js";
+import { localOperation, LocalError } from "../localCall.js";
 import {
   directAddressReportContent,
   directAddressText,
@@ -6,21 +7,22 @@ import {
   type Report,
   type Session,
 } from "@focus/shared";
-import { db } from "../firebaseApp.js";
+import { db } from "../localStore.js";
 import { runReport } from "../agent/runAgent.js";
 import {
-  CALLABLE_OPTS,
   HYPOTHESIS_PATH,
   WORKFLOWS_PATH,
+  agentCredentialsFromData,
   agentErrorMessage,
   cleanTimeZone,
-  configureEnv,
   fileContent,
-  loadSession,
+  type AgentCredentialInput,
+  loadAgentModelConfig,
+  loadOwnedSession,
   observationsDigest,
   recordUsage,
   requireAuth,
-  toAgentHttpsError,
+  toAgentLocalError,
 } from "./common.js";
 import { synthesizePendingObservationBatch } from "./processObservations.js";
 
@@ -28,30 +30,31 @@ const REPORT_ANALYSIS_WAIT_MS = 210_000;
 const REPORT_ANALYSIS_POLL_MS = 2_000;
 const REPORT_ANALYSIS_MAX_PASSES = 24;
 
-export const generateReport = onCall(CALLABLE_OPTS, async (request) => {
-  requireAuth(request);
+export const generateReport = localOperation(async (request) => {
+  const uid = requireAuth(request);
   const sessionId = request.data?.sessionId as string;
-  if (!sessionId) throw new HttpsError("invalid-argument", "sessionId required.");
+  if (!sessionId) throw new LocalError("invalid-argument", "sessionId required.");
   const timeZone = cleanTimeZone(request.data?.timeZone);
+  const credentials = agentCredentialsFromData(request.data);
 
-  const { ref } = await loadSession(sessionId);
+  const { ref } = await loadOwnedSession(sessionId, uid);
   const startedAt = Date.now();
   await ref.update({ status: "reporting" });
 
   try {
-    await ensureObservationsSynthesizedBeforeReport(sessionId, ref);
+    await ensureObservationsSynthesizedBeforeReport(sessionId, uid, ref, { credentials });
 
     const sessionSnap = await ref.get();
-    if (!sessionSnap.exists) throw new HttpsError("not-found", "Session not found.");
+    if (!sessionSnap.exists) throw new LocalError("not-found", "Session not found.");
     const session = sessionSnap.data() as Session;
 
     const obsSnap = await ref.collection("observations").orderBy("timestamp", "asc").get();
     const observations = obsSnap.docs.map((d) => d.data() as Observation);
     const obsById = new Map(observations.map((o) => [o.id, o]));
 
-    const apiKey = configureEnv();
+    const modelConfig = await loadAgentModelConfig(credentials);
     const result = await runReport({
-      apiKey,
+      modelConfig,
       hypothesis: fileContent(session.agentFiles, HYPOTHESIS_PATH),
       workflows: fileContent(session.agentFiles, WORKFLOWS_PATH),
       observationsDigest: observationsDigest(observations, timeZone),
@@ -104,12 +107,12 @@ export const generateReport = onCall(CALLABLE_OPTS, async (request) => {
       tx.update(ref, update);
     });
 
-    await recordUsage(ref, "report", usage, Date.now() - startedAt);
+    await recordUsage(ref, "report", usage, Date.now() - startedAt, modelConfig.model);
 
     return { reportId: reportRef.id };
   } catch (err) {
     console.error("generateReport failed", err);
-    const callableErr = toAgentHttpsError(err);
+    const callableErr = toAgentLocalError(err);
     await db
       .runTransaction(async (tx) => {
         const cur = await tx.get(ref);
@@ -128,11 +131,13 @@ export const generateReport = onCall(CALLABLE_OPTS, async (request) => {
 
 export async function ensureObservationsSynthesizedBeforeReport(
   sessionId: string,
-  ref: FirebaseFirestore.DocumentReference,
+  uid: string,
+  ref: DocumentReference,
   options: {
     maxWaitMs?: number;
     pollMs?: number;
     maxPasses?: number;
+    credentials?: AgentCredentialInput;
   } = {},
 ): Promise<void> {
   const maxWaitMs = options.maxWaitMs ?? REPORT_ANALYSIS_WAIT_MS;
@@ -149,22 +154,22 @@ export async function ensureObservationsSynthesizedBeforeReport(
       agentActivityAt: Date.now(),
     });
 
-    const result = await synthesizePendingObservationBatch(sessionId, "stop");
+    const result = options.credentials
+      ? await synthesizePendingObservationBatch(sessionId, uid, "stop", options.credentials)
+      : await synthesizePendingObservationBatch(sessionId, uid, "stop");
     passes += result.interpreted ? 1 : 0;
 
     if (result.reason === "no-pending" || !(await hasPendingObservationSummaries(ref))) return;
     if (result.reason === "update-in-flight") await delay(pollMs);
   }
 
-  throw new HttpsError(
+  throw new LocalError(
     "deadline-exceeded",
     "Observation analysis is still catching up. Try generating the report again in a moment.",
   );
 }
 
-async function hasPendingObservationSummaries(
-  ref: FirebaseFirestore.DocumentReference,
-): Promise<boolean> {
+async function hasPendingObservationSummaries(ref: DocumentReference): Promise<boolean> {
   const pending = await ref.collection("observations").where("summary", "==", "").limit(1).get();
   return !pending.empty;
 }

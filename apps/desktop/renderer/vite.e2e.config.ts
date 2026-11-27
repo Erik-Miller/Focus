@@ -13,15 +13,15 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: [
-      { find: "@/firebase", replacement: path.resolve(e2e, "mocks/firebase.ts") },
+      { find: "@/localApi", replacement: path.resolve(e2e, "mocks/localApi.ts") },
       { find: "@/platform", replacement: path.resolve(e2e, "mocks/platform.ts") },
       {
-        find: path.resolve(src, "firebase"),
-        replacement: path.resolve(e2e, "mocks/firebase.ts"),
+        find: path.resolve(src, "localApi"),
+        replacement: path.resolve(e2e, "mocks/localApi.ts"),
       },
       {
-        find: path.resolve(src, "firebase.ts"),
-        replacement: path.resolve(e2e, "mocks/firebase.ts"),
+        find: path.resolve(src, "localApi.ts"),
+        replacement: path.resolve(e2e, "mocks/localApi.ts"),
       },
       {
         find: path.resolve(src, "platform"),

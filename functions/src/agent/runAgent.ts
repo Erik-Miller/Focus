@@ -10,7 +10,7 @@ import {
   type ChatMessage,
   type TokenUsage,
 } from "@focus/shared";
-import { buildModel } from "./model.js";
+import { buildModel, type AgentModelConfig } from "./model.js";
 import { sumUsage, messageText } from "./usage.js";
 import { MONITOR_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT, REPORT_SYSTEM_PROMPT } from "./prompts.js";
 
@@ -33,7 +33,7 @@ export interface BatchObservationInput {
 }
 
 export interface MonitoringInput {
-  apiKey: string;
+  modelConfig: AgentModelConfig;
   priorHypothesis: string;
   priorWorkflows: string;
   currentIntent: string;
@@ -42,13 +42,13 @@ export interface MonitoringInput {
 }
 
 function imagePart(dataUrl: string): ContentPart {
-  return { type: "image_url", image_url: dataUrl };
+  return { type: "image_url", image_url: { url: dataUrl } };
 }
 
 export async function runMonitoring(
   input: MonitoringInput,
 ): Promise<{ update: UnderstandingUpdate; usage: TokenUsage }> {
-  const model = buildModel("observation", input.apiKey);
+  const model = buildModel("observation", input.modelConfig);
   const agent = createDeepAgent({
     model,
     systemPrompt: MONITOR_SYSTEM_PROMPT,
@@ -100,33 +100,26 @@ export async function runMonitoring(
 }
 
 export interface ChatInput {
-  apiKey: string;
+  modelConfig: AgentModelConfig;
   hypothesis: string;
   workflows: string;
   observationsDigest: string;
+  observationImages?: ChatObservationImageInput[];
   history: Pick<ChatMessage, "role" | "content">[];
   message: string;
   tools?: StructuredToolInterface[];
   signal?: AbortSignal;
 }
 
-export async function runChat(input: ChatInput): Promise<{ answer: string; usage: TokenUsage }> {
-  const model = buildModel("chat", input.apiKey);
-  const tools = input.tools ?? [];
-  const agent = createDeepAgent({
-    model,
-    systemPrompt: CHAT_SYSTEM_PROMPT,
-    tools,
-    subagents: tools.length
-      ? [
-          {
-            ...GENERAL_PURPOSE_SUBAGENT,
-            tools: [],
-          },
-        ]
-      : undefined,
-  });
+export interface ChatObservationImageInput {
+  obsId: string;
+  app: string;
+  windowTitle: string;
+  timestamp: number;
+  dataUrl: string;
+}
 
+export function buildChatMessageContent(input: ChatInput): ContentPart[] {
   const context = [
     "## Session knowledge",
     "### /hypothesis.md",
@@ -153,8 +146,42 @@ export async function runChat(input: ChatInput): Promise<{ answer: string; usage
     input.message,
   ].join("\n");
 
+  const content: ContentPart[] = [{ type: "text", text: prompt }];
+  if (input.observationImages?.length) {
+    content.push({
+      type: "text",
+      text: "\n## Recent observation screenshots\nUse these images as visual session context when answering.",
+    });
+    for (const image of input.observationImages) {
+      content.push({
+        type: "text",
+        text: `Observation ${image.obsId} at ${new Date(image.timestamp).toISOString()} — ${image.app}: ${image.windowTitle}`,
+      });
+      content.push(imagePart(image.dataUrl));
+    }
+  }
+  return content;
+}
+
+export async function runChat(input: ChatInput): Promise<{ answer: string; usage: TokenUsage }> {
+  const model = buildModel("chat", input.modelConfig);
+  const tools = input.tools ?? [];
+  const agent = createDeepAgent({
+    model,
+    systemPrompt: CHAT_SYSTEM_PROMPT,
+    tools,
+    subagents: tools.length
+      ? [
+          {
+            ...GENERAL_PURPOSE_SUBAGENT,
+            tools: [],
+          },
+        ]
+      : undefined,
+  });
+
   const result = (await agent.invoke(
-    { messages: [new HumanMessage(prompt)] },
+    { messages: [new HumanMessage({ content: buildChatMessageContent(input) as never })] },
     { recursionLimit: RECURSION_LIMIT, signal: input.signal },
   )) as AgentResult;
   await awaitAllCallbacks();
@@ -167,7 +194,7 @@ export async function runChat(input: ChatInput): Promise<{ answer: string; usage
 }
 
 export interface ReportInput {
-  apiKey: string;
+  modelConfig: AgentModelConfig;
   hypothesis: string;
   workflows: string;
   observationsDigest: string;
@@ -177,7 +204,7 @@ export interface ReportInput {
 export async function runReport(
   input: ReportInput,
 ): Promise<{ report: ReportContent; usage: TokenUsage }> {
-  const model = buildModel("report", input.apiKey);
+  const model = buildModel("report", input.modelConfig);
   const agent = createDeepAgent({
     model,
     systemPrompt: REPORT_SYSTEM_PROMPT,

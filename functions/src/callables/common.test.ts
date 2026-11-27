@@ -1,37 +1,46 @@
 import { describe, expect, it, vi } from "vitest";
-import { HttpsError } from "firebase-functions/v2/https";
+import { LocalError } from "../localCall.js";
 import {
   agentErrorMessage,
+  agentCredentialsFromData,
+  cleanAgentModelId,
+  cleanAnthropicApiKey,
   cleanTimeZone,
   emptyUsageAggregate,
   fileContent,
   formatTimestampForTimeZone,
-  isGeminiQuotaError,
-  OBSERVATION_INGEST_CALLABLE_OPTS,
+  isProviderQuotaError,
   observationsDigest,
   recordUsage,
   requireAuth,
-  SESSION_CALLABLE_OPTS,
+  requireSessionOwner,
   storagePathFromDownloadUrl,
-  toAgentHttpsError,
+  toAgentLocalError,
 } from "./common.js";
 import type { Observation, TokenUsage } from "@focus/shared";
 
 describe("callable common helpers", () => {
   it("requires callable auth", () => {
     expect(requireAuth({ auth: { uid: "uid1" } } as never)).toBe("uid1");
-    expect(() => requireAuth({} as never)).toThrow(HttpsError);
+    expect(() => requireAuth({} as never)).toThrow(LocalError);
+  });
+
+  it("requires session ownership", () => {
+    const session = { ownerUid: "uid1" } as never;
+
+    expect(() => requireSessionOwner(session, "uid1")).not.toThrow();
+    expect(() => requireSessionOwner(session, "uid2")).toThrow(LocalError);
   });
 
   it("maps quota errors to resource-exhausted and generic errors to internal", () => {
     const quota = new Error("429 RESOURCE_EXHAUSTED quota exceeded");
-    expect(isGeminiQuotaError(quota)).toBe(true);
-    expect(toAgentHttpsError(quota).code).toBe("resource-exhausted");
-    expect(agentErrorMessage(quota)).toContain("Gemini quota is exhausted");
+    expect(isProviderQuotaError(quota)).toBe(true);
+    expect(toAgentLocalError(quota).code).toBe("resource-exhausted");
+    expect(agentErrorMessage(quota)).toContain("model provider is rate-limited");
 
     const generic = new Error("boom");
-    expect(isGeminiQuotaError(generic)).toBe(false);
-    expect(toAgentHttpsError(generic).code).toBe("internal");
+    expect(isProviderQuotaError(generic)).toBe(false);
+    expect(toAgentLocalError(generic).code).toBe("internal");
     expect(agentErrorMessage(generic)).toBe("boom");
   });
 
@@ -74,15 +83,34 @@ describe("callable common helpers", () => {
     expect(fileContent({}, "/missing.md")).toBe("");
   });
 
-  it("extracts storage paths from Firebase download references", () => {
+  it("cleans model selection and optional BYOK Anthropic credentials", () => {
     expect(
-      storagePathFromDownloadUrl(
-        "https://firebasestorage.googleapis.com/v0/b/focus-test.appspot.com/o/screenshots%2Fsession1%2Fobs1-crop?alt=media&token=abc",
-      ),
-    ).toBe("screenshots/session1/obs1-crop");
-    expect(
-      storagePathFromDownloadUrl("gs://focus-test.appspot.com/screenshots/session1/obs1-crop"),
-    ).toBe("screenshots/session1/obs1-crop");
+      agentCredentialsFromData({
+        agentModel: "claude-sonnet-4-6",
+        anthropicApiKey: " key ",
+      }),
+    ).toEqual({
+      agentModel: "claude-sonnet-4-6",
+      anthropicApiKey: " key ",
+    });
+    expect(agentCredentialsFromData({})).toEqual({});
+    expect(cleanAgentModelId("gemini-3.6-flash")).toBe("gemini-3.6-flash");
+    expect(() => cleanAgentModelId("gemini-made-up")).toThrow(LocalError);
+    expect(cleanAnthropicApiKey(undefined)).toBeUndefined();
+    expect(cleanAnthropicApiKey(" sk-ant-test-common-0000000000 ")).toBe(
+      "sk-ant-test-common-0000000000",
+    );
+    expect(() => cleanAnthropicApiKey("short")).toThrow(LocalError);
+    expect(() => cleanAnthropicApiKey("sk-ant-test common 0000000000")).toThrow(LocalError);
+  });
+
+  it("extracts storage paths from local screenshot references", () => {
+    expect(storagePathFromDownloadUrl("focus-image://local/screenshots/session1/obs1-crop")).toBe(
+      "screenshots/session1/obs1-crop",
+    );
+    expect(storagePathFromDownloadUrl("focus-image://local/screenshots/session1/obs1-crop")).toBe(
+      "screenshots/session1/obs1-crop",
+    );
     expect(storagePathFromDownloadUrl("screenshots/session1/obs1-crop")).toBe(
       "screenshots/session1/obs1-crop",
     );
@@ -101,21 +129,6 @@ describe("callable common helpers", () => {
     });
   });
 
-  it("keeps session bookkeeping callables lightweight", () => {
-    expect(SESSION_CALLABLE_OPTS).toMatchObject({
-      memory: "256MiB",
-      timeoutSeconds: 30,
-      region: "us-central1",
-    });
-    expect(SESSION_CALLABLE_OPTS).not.toHaveProperty("secrets");
-    expect(OBSERVATION_INGEST_CALLABLE_OPTS).toMatchObject({
-      memory: "512MiB",
-      timeoutSeconds: 120,
-      region: "us-central1",
-    });
-    expect(OBSERVATION_INGEST_CALLABLE_OPTS).not.toHaveProperty("secrets");
-  });
-
   it("persists usage event and session aggregate increments", async () => {
     const eventSet = vi.fn();
     const update = vi.fn();
@@ -132,13 +145,13 @@ describe("callable common helpers", () => {
       totalTokens: 17,
     };
 
-    await recordUsage(sessionRef as never, "chat", usage, 123);
+    await recordUsage(sessionRef as never, "chat", usage, 123, "claude-sonnet-4-6");
 
     expect(eventSet).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "usage1",
         kind: "chat",
-        model: "gemini-3.5-flash",
+        model: "claude-sonnet-4-6",
         thinkingLevel: "medium",
         latencyMs: 123,
       }),

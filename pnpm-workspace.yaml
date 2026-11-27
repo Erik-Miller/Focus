@@ -3,3 +3,6 @@ packages:
   - "functions"
   - "apps/*"
   - "apps/desktop/renderer"
+
+overrides:
+  "@langchain/core": "1.5.1"

@@ -3,7 +3,7 @@ import type { UsageAggregate } from "@focus/shared";
 export function UsageBar({ usage }: { usage?: UsageAggregate }) {
   if (!usage || usage.callCount === 0) return null;
   return (
-    <div className="usage" title="Gemini 3.5 Flash token usage this session">
+    <div className="usage" title="Model token usage this session">
       <span className="usage-item">
         <em>{fmt(usage.totalTokens)}</em> tokens
       </span>

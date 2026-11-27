@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   runAutomation: vi.fn(),
 }));
 
-vi.mock("@/firebase", () => ({
+vi.mock("@/localApi", () => ({
   callables: {
     saveWorkflowForLater: mocks.saveWorkflowForLater,
   },

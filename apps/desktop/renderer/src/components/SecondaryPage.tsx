@@ -33,6 +33,7 @@ export function SecondaryPage({
           className={cx("secondary-page-back", backClassName)}
           variant="secondary"
           size="sm"
+          aria-label="Back"
           onClick={onBack}
         >
           <ArrowLeft aria-hidden />
