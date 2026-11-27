@@ -13,7 +13,12 @@ export function SessionWorkflows({
   savedCount: number;
   onOpenInbox: () => void;
 }) {
-  const workflows = report?.workflows.length ? report.workflows : session.discoveredWorkflows;
+  const useReport = Boolean(
+    report?.workflows.length &&
+    session.status !== "active" &&
+    (report.updatedAt ?? report.createdAt) >= session.lastUpdateAt,
+  );
+  const workflows = useReport && report ? report.workflows : session.discoveredWorkflows;
   return (
     <section className="session-workflows" aria-label="Discovered workflows">
       <div className="session-workflows-head">
@@ -35,7 +40,7 @@ export function SessionWorkflows({
             source={{
               sessionId: session.id,
               title: session.title || session.currentIntent || "Session",
-              ...(report?.workflows.length ? { reportId: report.id } : {}),
+              ...(useReport && report ? { reportId: report.id } : {}),
             }}
             onOpenInbox={onOpenInbox}
           />
