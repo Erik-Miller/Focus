@@ -8,3 +8,6 @@ pnpm-lock.yaml
 output
 .playwright-cli
 test-results
+
+.artifacts
+coverage

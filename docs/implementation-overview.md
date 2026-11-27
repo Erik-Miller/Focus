@@ -9,8 +9,7 @@ activity using the user's selected AI provider.
 - `apps/desktop`: Electron main process, secure key storage, capture, IPC, and local screenshot protocol.
 - `apps/desktop/renderer`: React UI, model settings, monitoring buffers, and local query hooks.
 - `packages/shared`: model catalog, types, schemas, and monitoring configuration.
-- `functions`: the local `@focus/local-service` package. The historical folder name is retained,
-  but this package has no hosted backend dependency and is bundled into Electron.
+- `packages/local-service`: local SQLite storage and the LangChain / Deep Agents harness, bundled into Electron.
 
 ## Data flow
 

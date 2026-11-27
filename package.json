@@ -14,11 +14,11 @@
     "dev:desktop": "pnpm --filter @focus/shared run build && pnpm --filter @focus/local-service run build && pnpm --filter @focus/desktop run dev",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "pnpm run test:unit",
-    "test:unit": "vitest run --config vitest.config.ts --project shared --project functions --project electron --project renderer",
+    "test:unit": "vitest run --config vitest.config.ts --project shared --project local-service --project electron --project renderer",
     "test:e2e": "playwright test",
     "test:ci": "pnpm run test:unit && pnpm run test:e2e",
     "test:watch": "vitest --config vitest.config.ts",
-    "coverage": "vitest run --config vitest.config.ts --coverage --project shared --project functions --project electron --project renderer",
+    "coverage": "vitest run --config vitest.config.ts --coverage --project shared --project local-service --project electron --project renderer",
     "format": "prettier --write .",
     "build:local": "pnpm --filter @focus/shared run build && pnpm --filter @focus/local-service run build",
     "check:privacy": "node scripts/check-privacy.mjs"

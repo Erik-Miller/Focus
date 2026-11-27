@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 const port = Number(process.env.FOCUS_E2E_PORT || 5174);
 
 export default defineConfig({
+  outputDir: ".artifacts/test-results",
   testDir: "apps/desktop/renderer/e2e",
   timeout: 30_000,
   expect: { timeout: 5_000 },

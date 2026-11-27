@@ -182,7 +182,7 @@ sequenceDiagram
   `sql.js` adapter serializes transactions and atomically saves the database before publishing local
   IPC updates. Screenshots stay in separate local files and are served through a restricted app protocol.
 - **Two-speed loop:** monitoring is throttled and batched; chat is interactive. Reasoning budgets
-  vary by provider and run type. See `functions/src/agent/model.ts` and
+  vary by provider and run type. See `packages/local-service/src/agent/model.ts` and
   `packages/shared/src/monitoringConfig.ts`.
 - **Workflow handoff:** Focus saves automation prompts and opens Codex, Claude Desktop/CLI when installed;
   the automation work happens outside Focus.
@@ -192,9 +192,16 @@ sequenceDiagram
 | Path                    | What                                                                           |
 | ----------------------- | ------------------------------------------------------------------------------ |
 | `packages/shared`       | Types, Zod schemas, monitoring config (shared by all packages)                 |
-| `functions`             | Local service + agent harness (`@focus/local-service`; historical folder name) |
+| `packages/local-service` | Local SQLite storage, provider integrations, and agent harness |
 | `apps/desktop`          | Electron app, native capture, and the nested React renderer                    |
 | `apps/desktop/renderer` | Vite renderer loaded by the Electron shell                                     |
+
+Additional project files:
+
+- `docs/`: [architecture](docs/implementation-overview.md) and [design rationale](docs/design.md).
+- `scripts/`: repository maintenance checks and shared test configuration.
+- `.artifacts/`: generated test results and coverage (ignored by Git).
+- Root configuration files define the workspace, linting, formatting, and test runners.
 
 ## Testing
 

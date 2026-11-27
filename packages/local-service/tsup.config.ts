@@ -17,7 +17,7 @@ export default defineConfig({
     // Bundle the shared contracts into the local service.
     options.alias = {
       ...(options.alias ?? {}),
-      "@focus/shared": path.resolve(dir, "../packages/shared/dist/index.js"),
+      "@focus/shared": path.resolve(dir, "../shared/dist/index.js"),
     };
   },
 });
