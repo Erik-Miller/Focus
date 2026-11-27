@@ -50,3 +50,42 @@ Unit tests cover the shared contracts, agent operations, secure key behavior, an
 transaction rollback, concurrent updates, session deletion, path validation, and provider routing.
 Renderer tests and mocked Playwright flows cover monitoring, chat cancellation, and workflow handoff.
 Live model validation remains opt-in through the local service's validate script.
+
+## Session sequence
+
+```mermaid
+%%{init: {"themeVariables": {"signalColor": "#ff8c00", "signalTextColor": "#ff8c00"}}}%%
+sequenceDiagram
+  actor FocusUser as Focus user
+  participant UI as React UI
+  participant Electron as Electron capture
+  participant Process as processObservations
+  participant Model as Agent harness + model
+  participant SQLite
+  participant Report as generateReport
+  participant Save as saveWorkflowForLater
+  participant Inbox as Workflow Inbox
+  FocusUser->>UI: Start Focus
+  UI->>Electron: Start monitoring
+  loop Until monitoring stops
+    Electron->>Electron: Detect dwell, capture screen, read active app/title, filter novelty
+    Electron->>Process: Send observation metadata + images
+    Process->>Model: Analyze observations
+    Model-->>Process: Structured output + usage
+    Process->>SQLite: Save awareness, timeline, observations, usage
+    SQLite-->>UI: Local change event updates awareness + timeline
+  end
+  FocusUser->>UI: Stop Focus
+  UI->>Report: Generate session report
+  Report->>Model: Summarize session + workflow candidates
+  Model-->>Report: Report + usage
+  Report->>SQLite: Save report + usage
+  SQLite-->>UI: Local change event shows report
+  opt Focus user saves workflow
+    FocusUser->>UI: Save workflow
+    UI->>Save: Save automation prompt
+    Save->>SQLite: Save workflow
+    SQLite->>Inbox: Add to Workflow Inbox
+    SQLite-->>UI: Local change event updates inbox
+  end
+```
