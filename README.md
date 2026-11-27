@@ -18,7 +18,7 @@ automating.
 The key philosophy is _understanding before action_. Focus watches and thinks; it does not click,
 type, edit files, or change anything on your computer. When it finds something worth automating, it
 packages the workflow into a ready-made prompt you can save to your **Workflow Inbox** or hand off to
-Claude Desktop/CLI to build.
+Codex, Claude Desktop/CLI to build.
 
 Read more about the rationale for the work:
 [Focus rationale](https://docs.google.com/document/d/1_J81AX0jKFAsakXlRQGSFJ6o1jm_Qr869qVEz-GmeEs/edit?usp=sharing)
@@ -45,8 +45,8 @@ Read more about the rationale for the work:
 
 - macOS, Node 24, and pnpm 11.7.0.
 - Your own OpenAI, Anthropic, or Gemini API key for AI features. No Focus account or hosted backend is required.
-- Optional for automation handoff: install Claude Desktop and/or Claude Code CLI. Focus can save
-  prompts to the Workflow Inbox without them, but the handoff buttons need the Claude Desktop app or
+- Optional for automation handoff: install Codex, Claude Desktop, and/or Claude Code CLI. Focus can save
+  prompts to the Workflow Inbox without them, but the handoff buttons need the selected desktop app or
   a `claude` CLI command on PATH to open/send prompts to those platforms.
 
 ### Manual setup
@@ -87,13 +87,13 @@ Focus has no maintainer-operated service, shared API key, login, product analyti
 or hosted tracing. LangChain and Deep Agents run inside the desktop app. Tracing stays disabled in
 all builds, even if your shell has tracing enabled.
 
-| Data or action                                                     | Where it goes                                                                              |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| Sessions, reports, chat history, token counts, and saved workflows | Local SQLite database on your Mac                                                          |
-| Captured screenshots                                               | Local files on your Mac; relevant images are also sent to your selected model for analysis |
-| AI analysis, chat, and report requests                             | Directly to OpenAI, Anthropic, or Google using the key you saved in Settings               |
-| Provider API keys                                                  | Encrypted on your Mac; used by the main process to authenticate with that provider         |
-| Optional workflow handoff                                          | The prepared prompt goes to Claude Desktop/CLI only when you choose a handoff action       |
+| Data or action                                                     | Where it goes                                                                               |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Sessions, reports, chat history, token counts, and saved workflows | Local SQLite database on your Mac                                                           |
+| Captured screenshots                                               | Local files on your Mac; relevant images are also sent to your selected model for analysis  |
+| AI analysis, chat, and report requests                             | Directly to OpenAI, Anthropic, or Google using the key you saved in Settings                |
+| Provider API keys                                                  | Encrypted on your Mac; used by the main process to authenticate with that provider          |
+| Optional workflow handoff                                          | The prepared prompt goes to Codex, Claude Desktop/CLI only when you choose a handoff action |
 
 Starting monitoring enables screenshot capture and automatic AI analysis. Relevant screenshots,
 active app/window titles, and session context may therefore leave your Mac for your chosen provider.
@@ -106,6 +106,18 @@ local history and saved workflows without a Focus service. Deleting a session re
 records and screenshots; saved workflows remain independent and can be deleted from the Inbox.
 Local database and screenshot files are not encrypted by Focus. API keys are encrypted separately.
 Local databases, credentials, and test captures are excluded from Git.
+
+## Save workflows and open them in another app
+
+Discovered workflows appear directly on the session screen and in the session report. Choose
+**Save workflow** on any card to keep its prompt locally, including workflows that are not yet
+marked automation-ready. **Saved workflows** opens the Workflow Inbox, where you can review the
+prompt, copy it, open it in Codex or Claude, or delete it.
+
+**Copy & Open Codex** and **Copy & Open Claude Desktop** copy the prompt and open the installed app.
+Choose the project/chat you want and paste the prompt there; opening the app does not submit it.
+**Claude Terminal** starts the installed Claude CLI with the prompt. **Copy Prompt** lets you use
+any other assistant. A saved workflow stays in the Inbox even if you delete its source session.
 
 ## Demo use case
 
@@ -172,7 +184,7 @@ sequenceDiagram
 - **Two-speed loop:** monitoring is throttled and batched; chat is interactive. Reasoning budgets
   vary by provider and run type. See `functions/src/agent/model.ts` and
   `packages/shared/src/monitoringConfig.ts`.
-- **Workflow handoff:** Focus saves automation prompts and opens Claude Desktop/CLI when installed;
+- **Workflow handoff:** Focus saves automation prompts and opens Codex, Claude Desktop/CLI when installed;
   the automation work happens outside Focus.
 
 ## Repo layout

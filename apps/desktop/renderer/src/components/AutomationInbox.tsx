@@ -10,7 +10,7 @@ import { getBridge } from "@/platform";
 import { Button } from "@/components/ui/button";
 import { SecondaryPage } from "./SecondaryPage";
 
-type BusyAction = "copy" | "desktop" | "terminal" | "delete";
+type BusyAction = "copy" | SavedWorkflowLaunchTarget | "delete";
 type ActionFeedback = { id: string; action: BusyAction; label: string };
 
 export function AutomationInbox({ items, onBack }: { items: SavedWorkflow[]; onBack: () => void }) {
@@ -55,7 +55,7 @@ export function AutomationInbox({ items, onBack }: { items: SavedWorkflow[]; onB
     setBusy({ id: item.id, action: target });
     setError(null);
     try {
-      if (!bridge?.runAutomation) throw new Error("Claude handoff is available in Focus desktop.");
+      if (!bridge?.runAutomation) throw new Error("App handoff is available in Focus desktop.");
       await bridge.runAutomation({
         target,
         title: item.workflow.name,
@@ -67,7 +67,7 @@ export function AutomationInbox({ items, onBack }: { items: SavedWorkflow[]; onB
       showButtonFeedback({
         id: item.id,
         action: target,
-        label: target === "desktop" ? "Opened" : "Sent",
+        label: target === "terminal" ? "Sent" : "Copied — paste in app",
       });
     } catch (err) {
       console.error("Failed to launch saved workflow", err);
@@ -75,7 +75,7 @@ export function AutomationInbox({ items, onBack }: { items: SavedWorkflow[]; onB
         id: item.id,
         message: errorMessage(
           err,
-          "Claude handoff failed. Check that Claude is installed and try again.",
+          "App handoff failed. Check that Claude is installed and try again.",
         ),
       });
     } finally {
@@ -131,6 +131,10 @@ export function AutomationInbox({ items, onBack }: { items: SavedWorkflow[]; onB
         ) : (
           <div className="automation-inbox-empty">
             <strong>No saved workflows yet</strong>
+            <p>
+              Choose Save workflow on a discovered workflow in your session or report. Open saved
+              prompts here in Codex or Claude, or copy them into another app.
+            </p>
           </div>
         )}
       </section>
@@ -185,9 +189,11 @@ function SavedWorkflowRow({
       </div>
 
       <p className="muted">{description}</p>
-      <p className="automation">
-        <span>Automation idea:</span> {automationIdea}
-      </p>
+      {automationIdea && (
+        <p className="automation">
+          <span>Automation idea:</span> {automationIdea}
+        </p>
+      )}
       <div className="saved-workflow-meta">Saved {dateLabel(item.updatedAt)}</div>
 
       <details className="saved-workflow-prompt">
@@ -218,6 +224,18 @@ function SavedWorkflowRow({
         </Button>
         {canLaunch && (
           <>
+            <Button
+              type="button"
+              className="saved-workflow-action"
+              size="sm"
+              variant="secondary"
+              onClick={() => onLaunch("codex")}
+              disabled={disabled}
+              title="Copy the prompt and open Codex"
+            >
+              <Monitor />
+              {buttonLabel({ busy, feedback, action: "codex", fallback: "Copy & Open Codex" })}
+            </Button>
             <Button
               type="button"
               className="automation-action-cta saved-workflow-action saved-workflow-action-desktop"
@@ -274,7 +292,7 @@ function buttonLabel({
 }): string {
   if (busy === action) {
     if (action === "copy") return "Copying";
-    if (action === "desktop") return "Opening";
+    if (action === "desktop" || action === "codex") return "Opening";
     if (action === "terminal") return "Opening";
   }
   if (feedback?.action === action) return feedback.label;

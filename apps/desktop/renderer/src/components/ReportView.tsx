@@ -7,9 +7,11 @@ import { WorkflowCard } from "./WorkflowCard";
 export function ReportView({
   observations,
   report,
+  onOpenInbox,
 }: {
   observations: Observation[];
   report: Report;
+  onOpenInbox?: () => void;
 }) {
   const viewReport = directAddressReport(report);
   const timelineMarkdown = localizeTimelineMarkdown(viewReport.timelineMarkdown, observations);
@@ -26,6 +28,7 @@ export function ReportView({
             <WorkflowCard
               key={`${w.name}-report-${i}`}
               workflow={w}
+              onOpenInbox={onOpenInbox}
               context={{
                 label: "Focus generated this summary objective",
                 value: viewReport.objective,

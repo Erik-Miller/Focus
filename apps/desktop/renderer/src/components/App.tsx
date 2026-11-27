@@ -29,6 +29,7 @@ import { Timeline } from "./Timeline";
 import { Chat } from "./Chat";
 import { ReportView } from "./ReportView";
 import { SessionList } from "./SessionList";
+import { SessionWorkflows } from "./SessionWorkflows";
 import { AutomationInbox } from "./AutomationInbox";
 import { Button } from "@/components/ui/button";
 import { Launcher, ResizeHandles } from "./DesktopLauncher";
@@ -724,6 +725,7 @@ export function App() {
             canGenerate={canGenerateReport}
             onBack={() => setPage("monitor")}
             onGenerate={generateReport}
+            onOpenInbox={() => setPage("inbox")}
           />
         ) : (
           <main className="layout">
@@ -738,6 +740,12 @@ export function App() {
                 <div className="current-session-label">Current Focus</div>
                 <AgentAwareness session={session} observations={observations} />
               </div>
+              <SessionWorkflows
+                session={session}
+                report={report}
+                savedCount={savedWorkflows.length}
+                onOpenInbox={() => setPage("inbox")}
+              />
               <Timeline
                 sessionId={sessionId}
                 observations={observations}
@@ -956,6 +964,7 @@ function ReportPage({
   canGenerate,
   onBack,
   onGenerate,
+  onOpenInbox,
 }: {
   observations: Observation[];
   session: Session;
@@ -965,6 +974,7 @@ function ReportPage({
   canGenerate: boolean;
   onBack: () => void;
   onGenerate: () => void;
+  onOpenInbox: () => void;
 }) {
   const reportTitle =
     report?.objective || session.currentIntent || session.title || "Untitled session";
@@ -991,7 +1001,7 @@ function ReportPage({
         />
       )}
       {report ? (
-        <ReportView observations={observations} report={report} />
+        <ReportView observations={observations} report={report} onOpenInbox={onOpenInbox} />
       ) : (
         <div className="report-empty">
           <strong>No summary yet</strong>

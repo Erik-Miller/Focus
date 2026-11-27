@@ -15,6 +15,9 @@ describe("automation launch helpers", () => {
   });
 
   it("keeps terminal target and rejects empty prompts", () => {
+    expect(cleanAutomationInput({ target: "codex", prompt: "review workflow" }).target).toBe(
+      "codex",
+    );
     expect(cleanAutomationInput({ target: "terminal", prompt: "run it" }).target).toBe("terminal");
     expect(() => cleanAutomationInput({ prompt: "   " })).toThrow("Automation prompt is empty.");
   });

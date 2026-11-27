@@ -24,20 +24,24 @@ test("mocked monitoring flow captures, stops, opens report, and cancels chat", a
   await expect(page.getByPlaceholder("Message...")).toBeEnabled();
 });
 
-test("mocked workflow flow saves to inbox and launches Claude handoff", async ({ page }) => {
+test("mocked workflow flow saves to inbox and opens Codex and Claude handoffs", async ({
+  page,
+}) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Start monitoring" }).click();
   await page.getByRole("button", { name: "Emit dwell" }).click();
   await page.getByRole("button", { name: "Stop" }).click();
 
-  await page.getByRole("button", { name: /Save this automation prompt/i }).click();
+  await page.getByRole("button", { name: /Save workflow/i }).click();
   await expect(page.getByRole("button", { name: /Workflow Inbox 1/i })).toBeVisible();
 
-  await page.getByRole("button", { name: /Workflow Inbox 1/i }).click();
+  await page.getByRole("button", { name: "Saved workflows (1)" }).click();
   await expect(
     page.locator(".saved-workflow-title strong", { hasText: "Compare links" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: /Copy & Open Codex/i }).click();
+  await expect(page.locator("body")).toHaveAttribute("data-last-automation-target", "codex");
   await page.getByRole("button", { name: /Claude Desktop/i }).click();
-  await expect(page.getByRole("button", { name: /Opened|Opening|Claude Desktop/i })).toBeVisible();
+  await expect(page.locator("body")).toHaveAttribute("data-last-automation-target", "desktop");
 });

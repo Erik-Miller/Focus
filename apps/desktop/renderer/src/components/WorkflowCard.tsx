@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Check, Monitor, Save, Terminal, Zap } from "lucide-react";
 import { directAddressText, type Workflow } from "@focus/shared";
 import { buildAutomationPrompt, type WorkflowContext, type WorkflowSource } from "@/automation";
@@ -12,39 +12,32 @@ type WorkflowCardProps = {
   context: WorkflowContext;
   source: WorkflowSource;
   spotlight?: boolean;
+  onOpenInbox?: () => void;
 };
 
-export function WorkflowCard({ workflow, context, source, spotlight = false }: WorkflowCardProps) {
+export function WorkflowCard({
+  workflow,
+  context,
+  source,
+  spotlight = false,
+  onOpenInbox,
+}: WorkflowCardProps) {
   const [launching, setLaunching] = useState<AutomationLaunchTarget | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveConfirmed, setSaveConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const saveFeedbackTimerRef = useRef<number | null>(null);
   const bridge = getBridge();
   const hasAutomationCandidate = Boolean(workflow.automatable && workflow.automationIdea);
-  const canLaunch = Boolean(bridge?.runAutomation && hasAutomationCandidate);
+  const canLaunch = Boolean(bridge?.runAutomation);
   const description = directAddressText(workflow.description);
   const automationIdea = directAddressText(workflow.automationIdea);
 
-  useEffect(() => {
-    return () => {
-      if (saveFeedbackTimerRef.current !== null) {
-        window.clearTimeout(saveFeedbackTimerRef.current);
-      }
-    };
-  }, []);
-
   async function saveForLater() {
-    if (!hasAutomationCandidate) return;
     const prompt = buildAutomationPrompt(workflow, context);
     setError(null);
     setNotice(null);
     setSaveConfirmed(false);
-    if (saveFeedbackTimerRef.current !== null) {
-      window.clearTimeout(saveFeedbackTimerRef.current);
-      saveFeedbackTimerRef.current = null;
-    }
     setSaving(true);
     try {
       const input = {
@@ -57,10 +50,6 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
         source.reportId ? { ...input, sourceReportId: source.reportId } : input,
       );
       setSaveConfirmed(true);
-      saveFeedbackTimerRef.current = window.setTimeout(() => {
-        setSaveConfirmed(false);
-        saveFeedbackTimerRef.current = null;
-      }, 1000);
     } catch (err) {
       console.error("Failed to save workflow", err);
       setError(errorMessage(err, "Failed to save workflow. Try again."));
@@ -70,7 +59,6 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
   }
 
   async function launch(target: AutomationLaunchTarget) {
-    if (!hasAutomationCandidate) return;
     const prompt = buildAutomationPrompt(workflow, context);
     setError(null);
     setNotice(null);
@@ -78,10 +66,12 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
     setLaunching(target);
     try {
       if (!bridge?.runAutomation) {
-        throw new Error("Claude handoff is available in Focus desktop.");
+        throw new Error("App handoff is available in Focus desktop.");
       }
       const result = await bridge.runAutomation({ target, title: workflow.name, prompt });
-      if (target === "desktop") {
+      if (target === "codex") {
+        setNotice("Prompt copied. In Codex, choose your project and paste it into a new chat.");
+      } else if (target === "desktop") {
         setNotice(
           result.copied
             ? "Prompt copied. Paste it into Claude Desktop when it opens."
@@ -95,9 +85,9 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
         );
       }
     } catch (err) {
-      console.error("Failed to launch Claude automation", err);
+      console.error("Failed to open workflow", err);
       setError(
-        errorMessage(err, "Claude handoff failed. Check that Claude is installed and try again."),
+        errorMessage(err, "App handoff failed. Check that Claude is installed and try again."),
       );
     } finally {
       setLaunching(null);
@@ -125,7 +115,7 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
           <span>Automation idea:</span> {automationIdea}
         </p>
       )}
-      {hasAutomationCandidate && (
+      {
         <>
           <div className="automation-actions">
             <Button
@@ -137,15 +127,21 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
               variant="secondary"
               onClick={saveForLater}
               disabled={saving || launching !== null}
-              title={
-                saveConfirmed ? "Saved to Workflow Inbox." : "Save this automation prompt for later"
-              }
-              aria-label={
-                saveConfirmed ? "Saved to Workflow Inbox." : "Save this automation prompt for later"
-              }
+              title={saveConfirmed ? "Saved to Workflow Inbox." : "Save workflow to Inbox"}
+              aria-label={saveConfirmed ? "Saved to Workflow Inbox." : "Save workflow to Inbox"}
             >
               {saveConfirmed ? <Check /> : <Save />}
-              {saveConfirmed ? "Saved" : saving ? "Saving" : "Save"}
+              {saveConfirmed ? "Saved to Inbox" : saving ? "Saving" : "Save workflow"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => launch("codex")}
+              disabled={!canLaunch || launching !== null}
+            >
+              <Monitor />
+              {launching === "codex" ? "Opening Codex" : "Copy & Open Codex"}
             </Button>
             <Button
               type="button"
@@ -176,8 +172,13 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
               {launching === "terminal" ? "Opening Claude Terminal" : "Claude Terminal"}
             </Button>
           </div>
+          {saveConfirmed && onOpenInbox && (
+            <Button size="sm" variant="ghost" onClick={onOpenInbox}>
+              Open Workflow Inbox
+            </Button>
+          )}
           {!bridge?.runAutomation && (
-            <p className="automation-hint">Claude handoff is available in Focus desktop.</p>
+            <p className="automation-hint">App handoff is available in Focus desktop.</p>
           )}
           {notice && (
             <p className="automation-confirmation" aria-live="polite">
@@ -190,7 +191,7 @@ export function WorkflowCard({ workflow, context, source, spotlight = false }: W
             </p>
           )}
         </>
-      )}
+      }
     </div>
   );
 }

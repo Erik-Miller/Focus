@@ -65,7 +65,7 @@ describe("save workflow tool", () => {
     );
   });
 
-  it("does not save without explicit intent, automatable idea, or valid evidence ids", async () => {
+  it("does not save without explicit intent or valid evidence ids", async () => {
     const noIntent = createSaveWorkflowTool({
       uid: "uid1",
       sourceSessionId: "session1",
@@ -86,9 +86,14 @@ describe("save workflow tool", () => {
     });
     await expect(invalidEvidence.invoke(workflow)).resolves.toContain("unknown observation ids");
 
-    await expect(
-      invalidEvidence.invoke({ ...workflow, evidenceObsIds: ["obs2"], automationIdea: "" }),
-    ).resolves.toContain("Only automatable workflows");
     expect(saveWorkflowForUser).not.toHaveBeenCalled();
+    await expect(
+      invalidEvidence.invoke({
+        ...workflow,
+        automatable: false,
+        evidenceObsIds: ["obs2"],
+        automationIdea: "",
+      }),
+    ).resolves.toContain('"saved":true');
   });
 });

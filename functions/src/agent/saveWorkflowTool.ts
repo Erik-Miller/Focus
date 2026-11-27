@@ -18,7 +18,7 @@ export interface SaveWorkflowToolContext {
 }
 
 const SAVE_WORKFLOW_TOOL_SCHEMA = workflowSchema.describe(
-  "An automatable workflow from this Focus session to save to the Workflow Inbox.",
+  "A workflow from this Focus session to save to the Workflow Inbox.",
 );
 
 export function createSaveWorkflowTool(context: SaveWorkflowToolContext): StructuredToolInterface {
@@ -34,13 +34,6 @@ export function createSaveWorkflowTool(context: SaveWorkflowToolContext): Struct
       }
 
       const addressedWorkflow = directAddressWorkflow(workflow);
-      if (!addressedWorkflow.automatable || !addressedWorkflow.automationIdea.trim()) {
-        return toolResult({
-          saved: false,
-          reason: "Only automatable workflows with a concrete automation idea can be saved.",
-        });
-      }
-
       const invalidEvidenceIds = addressedWorkflow.evidenceObsIds.filter(
         (id) => !validObservationIds.has(id),
       );
@@ -65,7 +58,7 @@ export function createSaveWorkflowTool(context: SaveWorkflowToolContext): Struct
     {
       name: "save_workflow",
       description:
-        "Save an explicitly user-requested, automatable Focus workflow to the user's Workflow Inbox. Only call this after the latest user message asks to save, add, bookmark, or put a workflow in the inbox.",
+        "Save an explicitly user-requested Focus workflow to the user's Workflow Inbox. Only call this after the latest user message asks to save, add, bookmark, or put a workflow in the inbox.",
       schema: SAVE_WORKFLOW_TOOL_SCHEMA,
     },
   );

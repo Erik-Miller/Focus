@@ -20,7 +20,7 @@ export const workflowSchema = z.object({
   evidenceObsIds: z.array(z.string()).describe("Observation ids that support this workflow."),
 });
 
-export const savedWorkflowLaunchTargetSchema = z.enum(["desktop", "terminal"]);
+export const savedWorkflowLaunchTargetSchema = z.enum(["desktop", "terminal", "codex"]);
 
 export const saveWorkflowForLaterInputSchema = z.object({
   workflow: workflowSchema,

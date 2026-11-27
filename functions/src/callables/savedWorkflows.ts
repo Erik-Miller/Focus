@@ -23,9 +23,6 @@ export async function saveWorkflowForUser(uid: string, value: unknown): Promise<
   }
 
   const input = parsed.data;
-  if (!input.workflow.automatable || !input.workflow.automationIdea.trim()) {
-    throw new LocalError("invalid-argument", "Only automatable workflows can be saved.");
-  }
   if (input.prompt.length > MAX_PROMPT_LENGTH) {
     throw new LocalError("invalid-argument", "Automation prompt is too large to save.");
   }

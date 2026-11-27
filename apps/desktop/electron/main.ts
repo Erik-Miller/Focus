@@ -517,7 +517,16 @@ async function ensureClaudeCli(): Promise<void> {
 
 async function runAutomation(input: Partial<AutomationLaunchInput>) {
   const cleaned = cleanAutomationInput(input);
-  if (cleaned.target === "terminal") {
+  if (cleaned.target === "codex") {
+    clipboard.writeText(cleaned.prompt);
+    try {
+      await execFileAsync("open", ["-a", "Codex"]);
+    } catch {
+      throw new Error(
+        "Prompt copied. Install Codex, then paste it into a new chat in your chosen project.",
+      );
+    }
+  } else if (cleaned.target === "terminal") {
     await openClaudeTerminal(cleaned.prompt);
   } else {
     await openClaudeDesktop(cleaned.prompt);

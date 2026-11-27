@@ -1,7 +1,7 @@
 import type { DwellInput } from "@focus/shared";
 
 export type CaptureState = "idle" | "capturing";
-export type AutomationLaunchTarget = "desktop" | "terminal";
+export type AutomationLaunchTarget = "desktop" | "terminal" | "codex";
 export type WindowMode = "compact" | "full";
 export interface AutomationLaunchInput {
   target: AutomationLaunchTarget;

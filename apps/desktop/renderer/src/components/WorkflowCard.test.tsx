@@ -29,10 +29,10 @@ const workflow: Workflow = {
   evidenceObsIds: ["obs1"],
 };
 
-function renderCard() {
+function renderCard(value = workflow) {
   render(
     <WorkflowCard
-      workflow={workflow}
+      workflow={value}
       context={{ label: "Context", value: "You compare links.", fallback: "(none)" }}
       source={{ sessionId: "session1", reportId: "report1", title: "Report title" }}
     />,
@@ -51,7 +51,7 @@ describe("WorkflowCard", () => {
     const user = userEvent.setup();
     renderCard();
 
-    await user.click(screen.getByRole("button", { name: /Save this automation prompt/i }));
+    await user.click(screen.getByRole("button", { name: /Save workflow/i }));
 
     expect(mocks.saveWorkflowForLater).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -78,5 +78,26 @@ describe("WorkflowCard", () => {
       }),
     );
     expect(await screen.findByText(/Prompt copied/)).toBeInTheDocument();
+  });
+
+  it("allows saving an observed workflow without an automation idea", async () => {
+    const user = userEvent.setup();
+    renderCard({ ...workflow, automatable: false, automationIdea: "" });
+    await user.click(screen.getByRole("button", { name: /Save workflow/i }));
+    expect(mocks.saveWorkflowForLater).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow: expect.objectContaining({ automatable: false }),
+      }),
+    );
+    expect(await screen.findByText("Saved to Inbox")).toBeInTheDocument();
+  });
+
+  it("copies a provider-neutral prompt and opens Codex without submitting it", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(screen.getByRole("button", { name: "Copy & Open Codex" }));
+    expect(mocks.runAutomation).toHaveBeenCalledWith(expect.objectContaining({ target: "codex" }));
+    expect(mocks.runAutomation.mock.calls[0][0].prompt).not.toContain("You are Claude");
+    expect(await screen.findByText(/In Codex, choose your project/)).toBeInTheDocument();
   });
 });

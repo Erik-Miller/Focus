@@ -2630,7 +2630,7 @@ body {
 }
 .saved-workflow-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
@@ -4136,3 +4136,7 @@ details[open] > summary .summary-chevron {
     transition: none !important;
   }
 }
+
+.session-workflows { display: grid; gap: 12px; }
+.session-workflows-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.session-workflows-head h3 { margin: 0; }

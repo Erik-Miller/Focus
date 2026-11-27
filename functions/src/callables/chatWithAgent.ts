@@ -152,8 +152,8 @@ export const chatWithAgent = localOperation(async (request) => {
     .filter((m) => m.id !== userMsg.id)
     .map((m) => ({ role: m.role, content: m.content }));
 
-  const obsSnap = await ref.collection("observations").orderBy("timestamp", "asc").limit(60).get();
-  const observations = obsSnap.docs.map((d) => d.data() as Observation);
+  const obsSnap = await ref.collection("observations").orderBy("timestamp", "desc").limit(60).get();
+  const observations = obsSnap.docs.map((d) => d.data() as Observation).reverse();
 
   try {
     if (await isChatRunCanceled(runRef)) return { canceled: true };

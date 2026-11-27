@@ -17,7 +17,10 @@ export const bridge: FocusBridge = {
   resizeBy: async () => undefined,
   endResize: async () => undefined,
   closeWindow: async () => undefined,
-  runAutomation: async (_input: AutomationLaunchInput) => ({ ok: true, copied: true }),
+  runAutomation: async (input: AutomationLaunchInput) => {
+    document.body.dataset.lastAutomationTarget = input.target;
+    return { ok: true, copied: true };
+  },
   getApiKeyStatus: async () => ({ configured: true, encryptionAvailable: true }),
   setApiKey: async () => ({ configured: true, encryptionAvailable: true, savedAt: 1 }),
   localCall: async () => ({}),

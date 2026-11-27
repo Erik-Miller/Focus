@@ -13,7 +13,7 @@ import "../src/styles.css";
 import { Chat } from "../src/components/Chat";
 import { Timeline } from "../src/components/Timeline";
 import { ReportView } from "../src/components/ReportView";
-import { WorkflowCard } from "../src/components/WorkflowCard";
+import { SessionWorkflows } from "../src/components/SessionWorkflows";
 import { AutomationInbox } from "../src/components/AutomationInbox";
 import { MonitoringController, type LiveTimelineBatch } from "../src/monitoring";
 import { Button } from "../src/components/ui/button";
@@ -187,11 +187,14 @@ function Harness() {
             usage={session.usage}
           />
         )}
-        <WorkflowCard
-          workflow={workflow}
-          context={{ label: "Context", value: "You tested Focus.", fallback: "(none)" }}
-          source={{ sessionId: "session-e2e", reportId: report?.id, title: "E2E report" }}
-        />
+        {session && (
+          <SessionWorkflows
+            session={session}
+            report={report}
+            savedCount={savedItems.length}
+            onOpenInbox={() => setPage("inbox")}
+          />
+        )}
       </>
     );
   }, [liveBatches, observations, page, report, savedItems, session]);

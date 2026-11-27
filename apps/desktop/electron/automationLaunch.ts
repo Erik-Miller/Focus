@@ -1,4 +1,4 @@
-export type AutomationTarget = "desktop" | "terminal";
+export type AutomationTarget = "desktop" | "terminal" | "codex";
 
 export interface AutomationLaunchInput {
   target: AutomationTarget;
@@ -7,7 +7,8 @@ export interface AutomationLaunchInput {
 }
 
 export function cleanAutomationInput(input: Partial<AutomationLaunchInput>): AutomationLaunchInput {
-  const target = input.target === "terminal" ? "terminal" : "desktop";
+  const target =
+    input.target === "codex" ? "codex" : input.target === "terminal" ? "terminal" : "desktop";
   const title = String(input.title ?? "Automation candidate")
     .trim()
     .slice(0, 160);

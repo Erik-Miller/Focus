@@ -24,7 +24,7 @@ export interface Workflow {
   evidenceObsIds: string[];
 }
 
-export type SavedWorkflowLaunchTarget = "desktop" | "terminal";
+export type SavedWorkflowLaunchTarget = "desktop" | "terminal" | "codex";
 
 export interface SavedWorkflow {
   id: string;

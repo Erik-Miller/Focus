@@ -23,6 +23,67 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 describe("local SQLite service", () => {
+  it("grounds chat in the latest screenshots after a session exceeds 60 observations", async () => {
+    const { sessionId } = (await localCall("startSession", {})) as { sessionId: string };
+    const ref = db.collection("sessions").doc(sessionId);
+    const screenshotPath = `screenshots/${sessionId}/test-image`;
+    await bucket.file(screenshotPath).save(Buffer.from("test-image"), { contentType: "image/png" });
+    await db.runTransaction(async (tx) => {
+      for (let timestamp = 1; timestamp <= 100; timestamp++) {
+        tx.set(ref.collection("observations").doc(`obs-${timestamp}`), {
+          id: `obs-${timestamp}`,
+          sessionId,
+          timestamp,
+          app: "Editor",
+          windowTitle: "Notes",
+          fullScreenshotPath: screenshotPath,
+          novelty: "high",
+          dwellMs: 300,
+        });
+      }
+    });
+    agentMocks.chat.mockResolvedValue({
+      answer: "Recent activity",
+      usage: { inputTokens: 1, outputTokens: 1, thinkingTokens: 0, totalTokens: 2 },
+    });
+    await localCall("chatWithAgent", {
+      sessionId,
+      runId: "latest_images_test",
+      message: "What am I doing now?",
+      agentModel: "gpt-6.2-sol",
+      openaiApiKey: "test-openai-key-1234567890",
+    });
+    const input = agentMocks.chat.mock.calls.at(-1)![0];
+    expect(input.observationImages.map((image: { obsId: string }) => image.obsId)).toEqual([
+      "obs-97",
+      "obs-98",
+      "obs-99",
+      "obs-100",
+    ]);
+  });
+
+  it("saves workflows without an automation idea and persists Codex handoff metadata", async () => {
+    const { sessionId } = (await localCall("startSession", {})) as { sessionId: string };
+    const { id } = (await localCall("saveWorkflowForLater", {
+      sourceSessionId: sessionId,
+      sourceTitle: "Research",
+      prompt: "Help evaluate this workflow",
+      workflow: {
+        name: "Read notes",
+        description: "Review notes",
+        stepsObserved: [],
+        frequency: "once",
+        automatable: false,
+        automationIdea: "",
+        evidenceObsIds: [],
+      },
+    })) as { id: string };
+    await localCall("recordSavedWorkflowLaunch", { id, target: "codex" });
+    await initializeLocalStore(directory);
+    expect(await localQuery({ kind: "savedWorkflows" })).toEqual([
+      expect.objectContaining({ id, lastLaunchTarget: "codex" }),
+    ]);
+  });
   it("persists sessions and observations across restart without network access", async () => {
     const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network forbidden"));
     const { sessionId } = (await localCall("startSession", { title: "Offline work" })) as {

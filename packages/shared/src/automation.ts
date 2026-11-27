@@ -21,7 +21,7 @@ export function buildAutomationPrompt(workflow: Workflow, context: WorkflowConte
     : "(No observation ids captured.)";
 
   return [
-    "You are Claude, launched from Focus to help implement an automation candidate.",
+    "You are helping with a workflow saved from Focus.",
     "",
     `${context.label}:`,
     context.value || context.fallback,
@@ -39,12 +39,14 @@ export function buildAutomationPrompt(workflow: Workflow, context: WorkflowConte
     workflow.frequency || "(Unknown)",
     "",
     "Automation idea:",
-    workflow.automationIdea,
+    workflow.automationIdea || "No automation proposed yet. Help me evaluate this workflow.",
     "",
     "Supporting observation ids:",
     evidence,
     "",
     "Please inspect the relevant local workspace, propose the smallest practical implementation,",
-    "then implement and verify it. Do not make destructive changes or use secrets without asking first.",
+    workflow.automatable
+      ? "then implement and verify it. Do not make destructive changes or use secrets without asking first."
+      : "and discuss whether automation would help before implementing anything.",
   ].join("\n");
 }
