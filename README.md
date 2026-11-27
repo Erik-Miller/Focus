@@ -199,9 +199,14 @@ sequenceDiagram
 Additional project files:
 
 - `docs/`: [architecture](docs/implementation-overview.md) and [design rationale](docs/design.md).
-- `scripts/`: repository maintenance checks and shared test configuration.
+- `scripts/`: repository maintenance checks.
+- `config/`: linting, formatting, TypeScript, and test-runner configuration.
 - `.artifacts/`: generated test results and coverage (ignored by Git).
-- Root configuration files define the workspace, linting, formatting, and test runners.
+- Root files cover the project overview, license, dependencies, workspace, Git ignores, and Node version.
+
+Use the root `pnpm` commands below so tools load the configuration from `config/`.
+ESLint and Prettier settings are also linked from `package.json` for editor discovery.
+Formatting uses `config/prettierignore` to skip generated files.
 
 ## Testing
 

@@ -1,7 +1,9 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import { testProjects } from "./scripts/test-projects";
+import { testProjects } from "./test-projects";
 
 export default defineConfig({
+  root: fileURLToPath(new URL("..", import.meta.url)),
   test: {
     projects: testProjects,
     coverage: {

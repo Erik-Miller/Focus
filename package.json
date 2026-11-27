@@ -2,7 +2,7 @@
   "name": "focus",
   "version": "0.1.0",
   "private": true,
-  "description": "Focus — a Deep Agent that observes moments of attention and builds an understanding of your work.",
+  "description": "Focus \u2014 a Deep Agent that observes moments of attention and builds an understanding of your work.",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -14,12 +14,12 @@
     "dev:desktop": "pnpm --filter @focus/shared run build && pnpm --filter @focus/local-service run build && pnpm --filter @focus/desktop run dev",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "pnpm run test:unit",
-    "test:unit": "vitest run --config vitest.config.ts --project shared --project local-service --project electron --project renderer",
-    "test:e2e": "playwright test",
+    "test:unit": "vitest run --config config/vitest.config.ts --project shared --project local-service --project electron --project renderer",
+    "test:e2e": "playwright test --config config/playwright.config.ts",
     "test:ci": "pnpm run test:unit && pnpm run test:e2e",
-    "test:watch": "vitest --config vitest.config.ts",
-    "coverage": "vitest run --config vitest.config.ts --coverage --project shared --project local-service --project electron --project renderer",
-    "format": "prettier --write .",
+    "test:watch": "vitest --config config/vitest.config.ts",
+    "coverage": "vitest run --config config/vitest.config.ts --coverage --project shared --project local-service --project electron --project renderer",
+    "format": "prettier --write . --ignore-path config/prettierignore",
     "build:local": "pnpm --filter @focus/shared run build && pnpm --filter @focus/local-service run build",
     "check:privacy": "node scripts/check-privacy.mjs"
   },
@@ -38,5 +38,10 @@
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "vitest": "^4.1.9"
-  }
+  },
+  "eslintConfig": {
+    "root": true,
+    "extends": "./config/eslint.cjs"
+  },
+  "prettier": "./config/prettier.json"
 }
