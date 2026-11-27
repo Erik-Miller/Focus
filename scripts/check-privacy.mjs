@@ -15,7 +15,7 @@ const files = execFileSync(
 const forbidden =
   /firebase|firestore|crashlytics|cloudfunctions\.net|firebaseio\.com|appspot\.com/i;
 const privateFile =
-  /(?:^|\/)(?:\.env(?:\..+)?|focus-credentials\.json|service-account[^/]*\.json)$|\.(?:sqlite|db)(?:-.*)?$|(?:^|\/)(?:local-data|test-results|\.playwright-cli|output)\//i;
+  /(?:^|\/)(?:\.env(?:\..+)?|focus-credentials\.json|service-account[^/]*\.json)$|\.(?:sqlite|db)(?:-.*)?$|(?:^|\/)(?:local-data|\.artifacts|test-results|\.playwright-cli|output)\//i;
 const failures = [];
 for (const file of new Set(files)) {
   if (!existsSync(file) || file === "scripts/check-privacy.mjs") continue;

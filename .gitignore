@@ -4,7 +4,7 @@ node_modules/
 
 # build output
 dist/
-functions/lib/
+packages/local-service/lib/
 out/
 build/
 *.tsbuildinfo
@@ -13,8 +13,6 @@ build/
 .env
 .env.*
 !.env.example
-functions/.env.local
-functions/.env.*.local
 *.key
 *.pem
 service-account*.json
@@ -43,3 +41,6 @@ focus-credentials.json
 playwright-report/
 test-results/
 output/
+
+# Consolidated generated test output
+.artifacts/

@@ -58,7 +58,7 @@ importers:
     dependencies:
       '@focus/local-service':
         specifier: workspace:*
-        version: link:../../functions
+        version: link:../../packages/local-service
       '@focus/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -155,11 +155,11 @@ importers:
         specifier: ^6.0.7
         version: 6.4.3(@types/node@25.9.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0)
 
-  functions:
+  packages/local-service:
     dependencies:
       '@focus/shared':
         specifier: workspace:*
-        version: link:../packages/shared
+        version: link:../shared
       '@langchain/anthropic':
         specifier: 1.4.0
         version: 1.4.0(@langchain/core@1.5.1(@opentelemetry/api@1.9.1)(openai@7.64.0(google-auth-library@10.7.0)(undici@7.28.0)(zod@3.25.76)))

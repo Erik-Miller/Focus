@@ -1,19 +1,20 @@
 import { defineConfig } from "vitest/config";
-import { testProjects } from "./vitest.workspace";
+import { testProjects } from "./scripts/test-projects";
 
 export default defineConfig({
   test: {
     projects: testProjects,
     coverage: {
       provider: "v8",
+      reportsDirectory: ".artifacts/coverage",
       include: [
         "packages/shared/src/automation.ts",
         "packages/shared/src/directAddress.ts",
         "packages/shared/src/monitoringConfig.ts",
         "packages/shared/src/schemas.ts",
-        "functions/src/agent/model.ts",
-        "functions/src/agent/saveWorkflowTool.ts",
-        "functions/src/agent/usage.ts",
+        "packages/local-service/src/agent/model.ts",
+        "packages/local-service/src/agent/saveWorkflowTool.ts",
+        "packages/local-service/src/agent/usage.ts",
         "apps/desktop/electron/automationLaunch.ts",
         "apps/desktop/electron/captureLogic.ts",
         "apps/desktop/electron/crop.ts",
@@ -34,7 +35,7 @@ export default defineConfig({
           functions: 90,
           lines: 90,
         },
-        "functions/src/agent/**": {
+        "packages/local-service/src/agent/**": {
           statements: 90,
           branches: 90,
           functions: 90,

@@ -40,7 +40,6 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 | Deep Agents (`deepagents`) for all reasoning | Planning + filesystem working memory + structured output fit an evolving model of intent | Heavier per call (big system prompt, more tokens) than a bare LLM call             |
 | Local model calls in Electron | No hosted backend; user controls their provider key | AI calls still need provider network access and quota |
 | User-selected model provider | OpenAI, Anthropic, and Gemini keys in local secure storage | Provider integrations share the same agent contracts |
-| Local Claude BYOK setting                     | Users can bring their own Anthropic key instead of relying on a shared backend secret    | The desktop app must store and forward that key securely for agent-backed calls    |
 | 250×250 cursor crop + periodic full frame    | Crop = precise focus point; full frame = occasional app/section context                  | Less context on most observations; full frames stay downscaled and cadence-limited |
 | Dwell at 300ms + dHash novelty filter        | Responsive capture without flooding the agent                                            | Native (client‑side) hashing complexity; tuned thresholds                          |
 | Local SQLite writes via Electron IPC | Session data stays on the Mac; serialized transactions | Local backups are the user’s responsibility |
@@ -53,23 +52,3 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 - **Closing the loop to actual automation** — turning a discovered, approved workflow into an
   executable action (with human‑in‑the‑loop interrupts).
 - **Subagents** for dedicated workflow‑analysis vs. report‑writing, plus richer offline evaluations.
-
-## Approximate time spent
-
-~1 focused build day: planning + interface design, the agent service layer (incl. validating the
-`deepagents` + Gemini integration), the React UI, the Electron capture path, and
-deployment/docs.
-
-## ~5 minute video outline
-
-1. **The idea (0:00–0:45)** — the theme flip: understanding your _own_ work from observation; dwell
-   as the signal; understanding before automation.
-2. **Live walkthrough (0:45–2:30)** — start a short Focus session; walk the Agent Awareness panel
-   (hypothesis, confidence, evidence, alternatives, workflows); scroll the timeline; show the live
-   token usage.
-3. **Chat (2:30–3:30)** — ask "what workflows did you notice?" and "which should I automate later?";
-   show grounded, specific answers; generate the report.
-4. **Under the hood (3:30–4:30)** — architecture diagram; Deep Agent + provider-switched local service; the evolving `/hypothesis.md`; the two‑speed monitoring loop and novelty filter;
-   local token usage.
-5. **Where it goes (4:30–5:00)** — accessibility tree, cross‑session memory, proactive assistance,
-   closing the loop to real automation.
