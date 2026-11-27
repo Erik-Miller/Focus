@@ -38,11 +38,11 @@ attention and tries to answer it on your behalf, then shows its reasoning so you
 | Decision                                     | Why                                                                                      | Tradeoff                                                                           |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Deep Agents (`deepagents`) for all reasoning | Planning + filesystem working memory + structured output fit an evolving model of intent | Heavier per call (big system prompt, more tokens) than a bare LLM call             |
-| Local model calls in Electron | No hosted backend; user controls their provider key | AI calls still need provider network access and quota |
-| User-selected model provider | OpenAI, Anthropic, and Gemini keys in local secure storage | Provider integrations share the same agent contracts |
+| Local model calls in Electron                | No hosted backend; user controls their provider key                                      | AI calls still need provider network access and quota                              |
+| User-selected model provider                 | OpenAI, Anthropic, and Gemini keys in local secure storage                               | Provider integrations share the same agent contracts                               |
 | 250×250 cursor crop + periodic full frame    | Crop = precise focus point; full frame = occasional app/section context                  | Less context on most observations; full frames stay downscaled and cadence-limited |
 | Dwell at 300ms + dHash novelty filter        | Responsive capture without flooding the agent                                            | Native (client‑side) hashing complexity; tuned thresholds                          |
-| Local SQLite writes via Electron IPC | Session data stays on the Mac; serialized transactions | Local backups are the user’s responsibility |
+| Local SQLite writes via Electron IPC         | Session data stays on the Mac; serialized transactions                                   | Local backups are the user’s responsibility                                        |
 
 ## How we'd extend it with more time
 
