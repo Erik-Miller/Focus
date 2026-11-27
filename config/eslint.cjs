@@ -14,7 +14,17 @@ module.exports = {
     browser: true,
     es2022: true,
   },
-  ignorePatterns: ["dist", "lib", "out", "build", "node_modules", "*.cjs", "*.config.*"],
+  ignorePatterns: [
+    "**/dist/**",
+    "**/dist-electron/**",
+    "**/lib/**",
+    "**/out/**",
+    "**/build/**",
+    "**/node_modules/**",
+    "**/.artifacts/**",
+    "**/*.cjs",
+    "**/*.config.*",
+  ],
   rules: {
     "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/no-unused-vars": [
